@@ -6,16 +6,30 @@ const env = require("./config/env");
 const routes = require("./routes");
 const billingController = require("./controllers/billing.controller");
 const { notFound, errorHandler } = require("./middlewares/error.middleware");
+const { connectDatabase } = require("./utils/connectDatabase");
 
 const app = express();
 
-app.use(cors({ origin: env.clientUrl, credentials: true }));
+app.use(cors({ origin: "*" }));
+
+// Serverless imports this file and never runs server.js, so nothing would
+// have opened the database connection. Doing it here means every request is
+// covered however the app is started. The connection is cached, so this is a
+// no-op once the container is warm.
+app.use(async (req, res, next) => {
+  try {
+    await connectDatabase();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 // Stripe signs the raw bytes, so this route must see the body before any
 // JSON parsing touches it. It is mounted ahead of express.json on purpose.
 app.post(
   "/api/billing/webhook",
   express.raw({ type: "application/json" }),
-  billingController.webhook
+  billingController.webhook,
 );
 
 app.use(express.json());

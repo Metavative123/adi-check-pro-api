@@ -20,8 +20,11 @@ const required = ["mongoUri", "jwtSecret"];
 const missing = required.filter((key) => !env[key]);
 
 if (missing.length) {
-  console.error(`Missing env variables: ${missing.join(", ")}. Check your .env file.`);
-  process.exit(1);
+  const message = `Missing env variables: ${missing.join(", ")}. Set them in .env, or in the host's environment settings when deployed.`;
+  console.error(message);
+  // Throwing rather than exiting: on a serverless platform process.exit turns
+  // into an unexplained crash, while a thrown error shows up in the logs.
+  throw new Error(message);
 }
 
 module.exports = env;
