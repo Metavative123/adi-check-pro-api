@@ -71,8 +71,9 @@ async function updateTest(req, res) {
 }
 
 async function deleteTest(req, res) {
-  await testService.deleteTest(req.user.id, req.params.testId);
-  res.json({ success: true, message: "Test deleted" });
+  const { affectsRating } = await testService.deleteTest(req.user.id, req.params.testId);
+  // Same signal as an edit: whether the performance figures need re-reading.
+  res.json({ success: true, message: "Test deleted", data: { affectsRating } });
 }
 
 module.exports = {

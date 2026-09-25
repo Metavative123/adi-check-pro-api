@@ -1,6 +1,7 @@
 const Test = require("../models/test.model");
 const User = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
+const config = require("../config/performance");
 
 // Counts come from the wizard as strings sometimes - make them safe numbers.
 function toCount(value) {
@@ -196,7 +197,13 @@ async function updateTest(instructorId, testId, body) {
 async function deleteTest(instructorId, testId) {
   const test = await Test.findOneAndDelete({ _id: testId, instructor: instructorId });
   if (!test) throw new ApiError(404, "Test not found");
-  return test;
+
+  // Deleting a test usually moves the figures - but not if it was already
+  // outside the rating window, where it was not being counted anyway.
+  const windowStart = new Date();
+  windowStart.setMonth(windowStart.getMonth() - config.windowMonths);
+
+  return { test, affectsRating: test.testDate >= windowStart };
 }
 
 module.exports = { createTest, listTests, updateTest, deleteTest };
