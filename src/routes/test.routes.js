@@ -10,6 +10,8 @@ router.use(protect);
 router.get("/performance", testController.getPerformance);
 router.get("/trend", testController.getTrend);
 router.get("/report", testController.getReport);
+router.get("/pupils", testController.listPupils);
+router.get("/pupils/summary", testController.getPupilSummary);
 // Logging a test is the paid feature; reading stays open so an expired
 // account can still see and export its own history.
 router.post("/", requireSubscription, testController.createTest);

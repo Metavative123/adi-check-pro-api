@@ -2,6 +2,7 @@ const testService = require("../services/test.service");
 const performanceService = require("../services/performance.service");
 const trendService = require("../services/trend.service");
 const reportService = require("../services/report.service");
+const pupilService = require("../services/pupil.service");
 
 async function createTest(req, res) {
   const test = await testService.createTest(req.user.id, req.body);
@@ -43,6 +44,22 @@ async function getReport(req, res) {
   res.json({ success: true, data: { report } });
 }
 
+// Distinct pupil names, searched across every test - not just the page the
+// instructor happens to be looking at.
+async function listPupils(req, res) {
+  const pupils = await pupilService.listPupils(req.user.id, {
+    search: req.query.search,
+    limit: req.query.limit,
+  });
+  res.json({ success: true, data: { pupils } });
+}
+
+// One pupil's whole record, for the side-by-side comparison.
+async function getPupilSummary(req, res) {
+  const summary = await pupilService.getPupilSummary(req.user.id, req.query.name);
+  res.json({ success: true, data: { summary } });
+}
+
 async function updateTest(req, res) {
   const { test, affectsRating } = await testService.updateTest(
     req.user.id,
@@ -64,6 +81,8 @@ module.exports = {
   getTrend,
   getPerformance,
   getReport,
+  listPupils,
+  getPupilSummary,
   updateTest,
   deleteTest,
 };
