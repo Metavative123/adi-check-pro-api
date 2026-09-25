@@ -47,6 +47,7 @@ The flow is always: **route -> controller -> service -> model**.
 | POST   | /api/tests                 | JWT  | Log a test                |
 | GET    | /api/tests                 | JWT  | Recent tests              |
 | GET    | /api/tests/performance     | JWT  | 12-month score and rating |
+| GET    | /api/tests/report          | JWT  | PDF report data for a period |
 | PATCH  | /api/tests/:testId         | JWT  | Edit a test               |
 | DELETE | /api/tests/:testId         | JWT  | Delete a test             |
 | GET    | /api/billing               | JWT  | Plan, trial days, access  |
@@ -74,6 +75,20 @@ field the score depends on actually changed - result, fault counts, physical
 intervention or verbal instruction. Editing a pupil name, date or centre comes
 back `false`, and the client then refreshes the rows without re-reading the
 rating.
+
+## PDF standards report
+
+`GET /api/tests/report?from=YYYY-MM-DD&to=YYYY-MM-DD` returns everything the PDF
+needs for a period the instructor chooses: the totals, each measurement with the
+arithmetic behind it, the score itemised per measurement, the rules applied, and
+the individual tests.
+
+Add `hideNames=1` and pupil names are dropped **on the server**, so a report
+asked for without names never contains one. Each test is still identified by its
+reference (e.g. `T-9F3A21`).
+
+The arithmetic lives in `src/services/scoring.js`, shared with the dashboard
+rating, so the PDF and the screen can never disagree.
 
 ## Performance rating
 

@@ -1,6 +1,7 @@
 const testService = require("../services/test.service");
 const performanceService = require("../services/performance.service");
 const trendService = require("../services/trend.service");
+const reportService = require("../services/report.service");
 
 async function createTest(req, res) {
   const test = await testService.createTest(req.user.id, req.body);
@@ -32,6 +33,16 @@ async function getPerformance(req, res) {
   res.json({ success: true, data: { performance } });
 }
 
+// Data for the PDF standards report. hideNames=1 omits pupil names entirely.
+async function getReport(req, res) {
+  const report = await reportService.buildReport(req.user.id, {
+    from: req.query.from,
+    to: req.query.to,
+    hideNames: req.query.hideNames === "1" || req.query.hideNames === "true",
+  });
+  res.json({ success: true, data: { report } });
+}
+
 async function updateTest(req, res) {
   const { test, affectsRating } = await testService.updateTest(
     req.user.id,
@@ -52,6 +63,7 @@ module.exports = {
   listTests,
   getTrend,
   getPerformance,
+  getReport,
   updateTest,
   deleteTest,
 };
