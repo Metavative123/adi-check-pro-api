@@ -20,11 +20,22 @@ module.exports = {
   // trusted, because an unverified webhook can be sent by anyone.
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
 
+  // How long a paid period may be overdue before access lapses on its own.
+  // Renewals normally advance the period by webhook within seconds; this is
+  // only the fallback for when webhooks are not arriving.
+  periodGraceDays: Number(process.env.BILLING_PERIOD_GRACE_DAYS || 3),
+
   // Days of free access a new account gets, no card required.
   trialDays: Number(process.env.BILLING_TRIAL_DAYS || 14),
 
   // Where Stripe sends the customer back to.
-  successUrl: process.env.BILLING_SUCCESS_URL || "/billing?checkout=success",
+  // Stripe substitutes {CHECKOUT_SESSION_ID}. This page sits outside the
+  // signed-in guard, confirms the session, then sends the user to the
+  // dashboard - otherwise the guard bounces them back to the plan screen
+  // before the new subscription has been applied.
+  successUrl:
+    process.env.BILLING_SUCCESS_URL ||
+    "http://localhost:3000/checkout/complete?session_id={CHECKOUT_SESSION_ID}",
   cancelUrl: process.env.BILLING_CANCEL_URL || "/billing?checkout=cancelled",
 
   // Anything sk_live_ is a real card-charging key. Handy for banners and logs.

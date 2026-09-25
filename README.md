@@ -51,8 +51,12 @@ The flow is always: **route -> controller -> service -> model**.
 | PATCH  | /api/tests/:testId         | JWT  | Edit a test               |
 | DELETE | /api/tests/:testId         | JWT  | Delete a test             |
 | GET    | /api/billing               | JWT  | Plan, trial days, access  |
-| POST   | /api/billing/checkout      | JWT  | Start Stripe Checkout     |
+| GET    | /api/billing/plans         | JWT  | The plans and their discounts |
+| POST   | /api/billing/trial         | JWT  | Take the free trial (no card) |
+| POST   | /api/billing/checkout      | JWT  | Start Stripe Checkout (takes planId) |
 | POST   | /api/billing/portal        | JWT  | Stripe billing portal     |
+| POST   | /api/billing/checkout/confirm | JWT | Apply a finished checkout |
+| GET    | /api/billing/payments      | JWT  | Payment history           |
 | POST   | /api/billing/webhook       | sig  | Stripe events             |
 
 Protected routes expect `Authorization: Bearer <token>`.
@@ -121,12 +125,57 @@ shown a colour, but the score and band are still returned for admin use.
 
 ## Billing
 
-Free trial first: a new account gets `BILLING_TRIAL_DAYS` (default 14) of full
-access with no card. When it runs out, `POST /api/tests` returns **402** and the
+Every instructor chooses before reaching the dashboard: a free trial, or one of
+the plans. Accounts created before plans existed are asked on their next visit,
+because `subscription.planSelected` defaults to `false`.
+
+The trial gives `BILLING_TRIAL_DAYS` (default 14) of full access with **no card**,
+and re-visiting the page cannot restart the clock. When it runs out, `POST /api/tests` returns **402** and the
 rest of the app stays readable - an expired account can still see its history.
 
 Paying replaces the trial with a Stripe subscription. Checkout and the billing
 portal are Stripe-hosted, so no card details ever reach this server.
+
+### Plans
+
+Defined in `src/config/plans.js` - **the one place prices live**. Amounts are
+plain numbers in that file, in version control. There is deliberately no
+`PLAN_*_AMOUNT` environment variable: having the price in two places meant an
+edit could be silently overridden by `.env`.
+
+| Plan       | Default | Per month | Saving |
+| ---------- | ------- | --------- | ------ |
+| Monthly    | GBP 19  | GBP 19.00 | -      |
+| 6 months   | GBP 99  | GBP 16.50 | 13%    |
+| 12 months  | GBP 159 | GBP 13.25 | 30%    |
+
+Discounts are **calculated** against the monthly rate, never stored, so changing
+an amount updates the advertised saving automatically.
+
+### Changing a price
+
+A Stripe price cannot be edited once created - only replaced. So:
+
+```bash
+# 1. change the amount in src/config/plans.js
+# 2. create the new price
+npm run stripe:setup        # prints the new id; reuses the plans that did not change
+# 3. paste the printed PLAN_*_PRICE_ID into .env
+# 4. confirm the app and Stripe agree
+npm run stripe:check
+```
+
+`stripe:check` exists because of the one dangerous mistake here: changing the
+amount and forgetting step 3. The app would then advertise the new price and
+charge the old one. It compares every configured price id against Stripe and
+reports amount, currency, interval, archived and test/live mismatches.
+
+Existing subscribers stay on the price they signed up to until they switch,
+which is normally what you want. Archive the old price in Stripe once nobody
+is on it.
+
+Only the price **ids** stay in the environment, because test mode and live mode
+have different ones for the same plan.
 
 ### Test mode
 
@@ -140,10 +189,66 @@ Create the product and price in whichever account the key points at:
 npm run stripe:setup
 ```
 
+### Access levels
+
+One function decides, in `src/services/access.js`:
+
+| Level | Means | When |
+| --- | --- | --- |
+| `full` | read and write | subscribed, or inside a live trial - **including a cancelled plan, until the period already paid for ends** |
+| `read_only` | view and export only | lapsed trial, ended subscription, failed payment |
+| `revoked` | nothing, not even viewing | **refund or chargeback** |
+
+Cancelling is not a punishment: the instructor keeps everything they paid for.
+A refund is different - the money has gone back, so the service stops at once,
+the Stripe subscription is cancelled so no further billing happens, and the app
+shows a lock screen instead of any data. **A partial refund does not revoke.**
+
+Records are never deleted by any of this.
+
+Cancelling during the free trial keeps the remaining days: nothing was charged,
+so there is nothing to cut short. The trial simply will not convert.
+
+### Payments
+
+Money charged is stored in its own `payments` collection, separate from the
+subscription state on the user: the user document says what the instructor can
+do now, the payment rows are the history of what was taken. Rows are upserted on
+Stripe's invoice id, so a webhook delivered twice updates one row rather than
+adding another.
+
+### After a payment
+
+Stripe returns the customer to `/checkout/complete?session_id=...`, a page that
+sits **outside** the signed-in guard. It confirms the session server side, which
+applies the subscription immediately, then sends them to the dashboard. Returning
+to a guarded page instead would bounce them back to the plan screen, because the
+webhook may not have arrived yet.
+
 ### Webhooks
 
 Production relies on webhooks; they arrive whether or not anyone has the app
-open. Locally, forward them with the Stripe CLI:
+open - a renewal, or a card that fails next month, happens with nobody looking.
+
+**Set this up in the Stripe dashboard** (Developers -> Webhooks -> Add endpoint):
+
+- **Endpoint URL**: `https://<your-api-host>/api/billing/webhook`
+- **Events to send**:
+  - `checkout.session.completed`
+  - `customer.subscription.created`
+  - `customer.subscription.updated`
+  - `customer.subscription.deleted`
+  - `invoice.paid`
+  - `invoice.payment_succeeded`
+  - `invoice.payment_failed`
+  - `charge.refunded`
+  - `charge.dispute.created`
+- Copy the signing secret it gives you (`whsec_...`) into `STRIPE_WEBHOOK_SECRET`.
+
+Requests without a valid signature are rejected, and the route is mounted before
+`express.json()` because Stripe signs the raw bytes.
+
+Locally, forward them with the Stripe CLI:
 
 ```bash
 stripe listen --forward-to localhost:5000/api/billing/webhook

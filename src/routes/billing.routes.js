@@ -9,7 +9,12 @@ const router = express.Router();
 router.use(protect);
 
 router.get("/", billingController.getBilling);
+router.get("/plans", billingController.getPlans);
+router.post("/trial", billingController.chooseTrial);
 router.post("/checkout", billingController.createCheckoutSession);
+router.post("/checkout/confirm", billingController.confirmCheckout);
+router.get("/payments", billingController.listPayments);
+router.post("/cancel", billingController.cancelSubscription);
 router.post("/portal", billingController.createPortalSession);
 
 module.exports = router;

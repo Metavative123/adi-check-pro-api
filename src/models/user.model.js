@@ -57,11 +57,31 @@ const userSchema = new mongoose.Schema(
         default: "trialing",
       },
       plan: { type: String, default: "trial" },
+      // Which of the offered plans was picked, if any.
+      planId: { type: String },
+      // False until the instructor has chosen a trial or a paid plan. Existing
+      // accounts default to false, so they are asked on their next visit.
+      planSelected: { type: Boolean, default: false },
       trialEndsAt: { type: Date },
       stripeCustomerId: { type: String, index: true },
       stripeSubscriptionId: { type: String },
       currentPeriodEnd: { type: Date },
       cancelAtPeriodEnd: { type: Boolean, default: false },
+      // When the cancellation takes effect. Current Stripe API versions express
+      // "cancel at period end" as a `cancel_at` timestamp rather than a flag,
+      // and it can also be a custom date, so the date itself is what matters.
+      cancelAt: { type: Date },
+
+      // Set when money has gone back: a refund or a chargeback. This stops
+      // everything immediately, including viewing, and outranks any period
+      // the instructor had otherwise paid for.
+      accessRevoked: { type: Boolean, default: false },
+      revokedReason: { type: String, enum: ["refund", "dispute", "manual"] },
+      revokedAt: { type: Date },
+
+      // The instructor said they will not continue after the trial. The trial
+      // still runs to its end date - nothing was charged, so nothing is cut short.
+      trialCancelled: { type: Boolean, default: false },
     },
 
     resetTokenHash: { type: String, select: false },
@@ -81,14 +101,25 @@ userSchema.methods.comparePassword = function comparePassword(plain) {
   return bcrypt.compare(plain, this.password);
 };
 
-// True while the account may use the paid features: either inside the free
-// trial, or on a live subscription.
+// True when the instructor still has to choose between a trial and a plan.
+// Existing accounts see the choice too, because planSelected defaults to false.
+userSchema.virtual("needsPlanChoice").get(function needsPlanChoice() {
+  // eslint-disable-next-line global-require
+  const billing = require("../config/stripe");
+  if (!billing.enabled) return false;
+  if (this.subscription?.status === "active") return false;
+  return !this.subscription?.planSelected;
+});
+
+// full / read_only / revoked, worked out in one place.
+userSchema.virtual("access").get(function access() {
+  // eslint-disable-next-line global-require
+  return require("../services/access").accessFor(this);
+});
+
+// Kept as "may change things", which is what every caller means by it.
 userSchema.virtual("hasAccess").get(function hasAccess() {
-  const sub = this.subscription;
-  if (!sub) return false;
-  if (sub.status === "active") return true;
-  if (sub.status === "trialing") return Boolean(sub.trialEndsAt && sub.trialEndsAt > new Date());
-  return false;
+  return this.access.canWrite;
 });
 
 // Whole days left in the trial, 0 once it has run out.
