@@ -101,7 +101,7 @@ async function getOrCreateCustomer(user) {
   const customer = await requireStripe().customers.create({
     email: user.email,
     name: user.name,
-    metadata: { userId: user._id.toString() },
+    metadata: { userId: user._id },
   });
 
   user.subscription.stripeCustomerId = customer.id;
@@ -153,8 +153,8 @@ async function createCheckoutSession(userId, { planId, successUrl, cancelUrl }) 
     success_url: successUrl || config.successUrl,
     cancel_url: cancelUrl || config.cancelUrl,
     // Lets the webhook find the user even if the customer lookup ever fails.
-    client_reference_id: user._id.toString(),
-    subscription_data: { metadata: { userId: user._id.toString(), planId: plan.id } },
+    client_reference_id: user._id,
+    subscription_data: { metadata: { userId: user._id, planId: plan.id } },
   });
 
   return { url: session.url, id: session.id, plan: plan.id };
@@ -204,13 +204,12 @@ async function applySubscription(user, subscription) {
   return user;
 }
 
-// Writes an invoice into the payments collection. Upserted on the invoice id,
+// Writes an invoice into the payments table. Upserted on the invoice id,
 // so a webhook delivered twice updates one row rather than creating two.
 async function recordInvoice(invoice, user) {
   if (!invoice?.id) return null;
 
-  const owner =
-    user || (await User.findOne({ "subscription.stripeCustomerId": invoice.customer }));
+  const owner = user || (await User.findByStripeCustomerId(invoice.customer));
   if (!owner) return null;
 
   const line = invoice.lines?.data?.[0];
@@ -239,27 +238,23 @@ async function recordInvoice(invoice, user) {
     }
   }
 
-  return Payment.findOneAndUpdate(
-    { stripeInvoiceId: invoice.id },
-    {
-      instructor: owner._id,
-      stripeInvoiceId: invoice.id,
-      stripePaymentIntentId: paymentIntentId,
-      stripeSubscriptionId: subscriptionId,
-      stripeCustomerId: invoice.customer || undefined,
-      planId: owner.subscription?.planId || undefined,
-      description: line?.description || invoice.description || undefined,
-      amount: invoice.amount_paid || invoice.amount_due || 0,
-      currency: invoice.currency,
-      status: paid ? "paid" : invoice.status === "void" ? "void" : "failed",
-      periodStart: toDate(line?.period?.start),
-      periodEnd: toDate(line?.period?.end),
-      paidAt: paid ? toDate(invoice.status_transitions?.paid_at) || new Date() : undefined,
-      receiptUrl: invoice.hosted_invoice_url || undefined,
-      invoiceUrl: invoice.invoice_pdf || undefined,
-    },
-    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
-  );
+  return Payment.upsertByInvoice({
+    instructor: owner._id,
+    stripeInvoiceId: invoice.id,
+    stripePaymentIntentId: paymentIntentId,
+    stripeSubscriptionId: subscriptionId,
+    stripeCustomerId: invoice.customer || undefined,
+    planId: owner.subscription?.planId || undefined,
+    description: line?.description || invoice.description || undefined,
+    amount: invoice.amount_paid || invoice.amount_due || 0,
+    currency: invoice.currency,
+    status: paid ? "paid" : invoice.status === "void" ? "void" : "failed",
+    periodStart: toDate(line?.period?.start),
+    periodEnd: toDate(line?.period?.end),
+    paidAt: paid ? toDate(invoice.status_transitions?.paid_at) || new Date() : undefined,
+    receiptUrl: invoice.hosted_invoice_url || undefined,
+    invoiceUrl: invoice.invoice_pdf || undefined,
+  });
 }
 
 // Called when Stripe sends the customer back after Checkout. Applies the
@@ -280,7 +275,7 @@ async function confirmCheckout(userId, sessionId) {
   // The session must belong to this instructor.
   if (
     session.client_reference_id &&
-    session.client_reference_id !== user._id.toString()
+    session.client_reference_id !== user._id
   ) {
     throw new ApiError(403, "That checkout session belongs to another account");
   }
@@ -302,9 +297,7 @@ async function confirmCheckout(userId, sessionId) {
 async function listPayments(userId, { limit = 24 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 24, 1), 100);
 
-  return Payment.find({ instructor: userId })
-    .sort({ paidAt: -1, createdAt: -1 })
-    .limit(safeLimit);
+  return Payment.listForInstructor(userId, safeLimit);
 }
 
 // Money has gone back, so the service stops - immediately and completely,
@@ -339,14 +332,9 @@ async function handleRefund(charge) {
 
   // charge.invoice no longer exists, so find the row by payment intent and
   // fall back to the newest paid row for that customer.
-  const query = charge.payment_intent
-    ? { stripePaymentIntentId: charge.payment_intent }
-    : { stripeCustomerId: charge.customer, status: "paid" };
-
-  const updated = await Payment.findOneAndUpdate(
-    query,
-    { status: fullyRefunded ? "refunded" : "paid" },
-    { sort: { paidAt: -1 } }
+  const updated = await Payment.setLatestStatus(
+    { paymentIntentId: charge.payment_intent, customerId: charge.customer },
+    fullyRefunded ? "refunded" : "paid"
   );
 
   if (!updated) {
@@ -355,7 +343,7 @@ async function handleRefund(charge) {
 
   if (!fullyRefunded) return { handled: true, revoked: false, reason: "partial refund" };
 
-  const user = await User.findOne({ "subscription.stripeCustomerId": charge.customer });
+  const user = await User.findByStripeCustomerId(charge.customer);
   if (!user) return { handled: false, reason: "no matching user" };
 
   await revokeAccess(user, "refund");
@@ -364,7 +352,7 @@ async function handleRefund(charge) {
 
 // A chargeback is money clawed back by the bank - treated the same way.
 async function handleDispute(dispute) {
-  const user = await User.findOne({ "subscription.stripeCustomerId": dispute.customer });
+  const user = await User.findByStripeCustomerId(dispute.customer);
   if (!user) return { handled: false, reason: "no matching user" };
 
   await revokeAccess(user, "dispute");
@@ -531,7 +519,7 @@ async function handleEvent(event) {
     return {
       handled: Boolean(payment),
       type: event.type,
-      ...(payment ? { paymentId: payment._id.toString() } : { reason: "no matching user" }),
+      ...(payment ? { paymentId: payment._id } : { reason: "no matching user" }),
     };
   }
 
@@ -554,7 +542,7 @@ async function handleEvent(event) {
     customerId = event.data.object.customer;
   }
 
-  const user = await User.findOne({ "subscription.stripeCustomerId": customerId });
+  const user = await User.findByStripeCustomerId(customerId);
   if (!user) return { handled: false, type: event.type, reason: "no matching user" };
 
   const subscription =

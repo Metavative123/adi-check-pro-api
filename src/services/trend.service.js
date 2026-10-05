@@ -30,18 +30,16 @@ async function getTrend(instructorId, range = "12") {
   const months = RANGES[String(range)] === undefined ? 12 : RANGES[String(range)];
   const now = new Date();
 
-  const query = { instructor: instructorId };
+  const filters = {};
   if (months) {
     const start = new Date();
     start.setMonth(start.getMonth() - (months - 1));
     start.setDate(1);
     start.setHours(0, 0, 0, 0);
-    query.testDate = { $gte: start };
+    filters.from = start;
   }
 
-  const tests = await Test.find(query)
-    .select("testDate result faults")
-    .sort({ testDate: 1 });
+  const tests = await Test.findAll(instructorId, filters, { order: "oldest" });
 
   // Nothing logged yet - return an empty series rather than a fake one.
   if (tests.length === 0) {

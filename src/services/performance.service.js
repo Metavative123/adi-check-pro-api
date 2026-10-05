@@ -13,10 +13,7 @@ async function getPerformance(instructorId) {
   const windowStart = new Date();
   windowStart.setMonth(windowStart.getMonth() - windowMonths);
 
-  const tests = await Test.find({
-    instructor: instructorId,
-    testDate: { $gte: windowStart },
-  }).select("result faults physicalIntervention verbalIntervention");
+  const tests = await Test.findAll(instructorId, { from: windowStart });
 
   const totals = scoring.totalsFrom(tests);
   const metrics = scoring.metricsFrom(totals);

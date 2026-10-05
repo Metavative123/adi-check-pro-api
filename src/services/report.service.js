@@ -43,10 +43,7 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
   const user = await User.findById(instructorId);
   if (!user) throw new ApiError(404, "User not found");
 
-  const tests = await Test.find({
-    instructor: instructorId,
-    testDate: { $gte: start, $lte: end },
-  }).sort({ testDate: 1, createdAt: 1 });
+  const tests = await Test.findAll(instructorId, { from: start, to: end }, { order: "oldest" });
 
   const totals = scoring.totalsFrom(tests);
   const metrics = scoring.metricsFrom(totals);

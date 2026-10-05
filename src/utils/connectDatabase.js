@@ -1,75 +1,85 @@
-const dns = require("dns");
-const mongoose = require("mongoose");
+const { Pool } = require("pg");
 const env = require("../config/env");
 
-// Node takes its DNS servers from the OS. If that list is unusable, the
-// "mongodb+srv://" lookup fails with "querySrv ECONNREFUSED" before any
-// connection is attempted. DNS_SERVERS points Node at a resolver that works.
-if (env.dnsServers.length) {
-  dns.setServers(env.dnsServers);
-}
-
 // Serverless (Vercel, Lambda) never runs server.js - it just imports the
-// express app. So the connection has to be made lazily, on the first request,
-// and then cached: a warm container serves many requests and must not open a
-// new connection for each one. globalThis survives module re-evaluation
-// inside the same container; a plain module variable does not always.
+// express app. So the pool is created lazily and cached on globalThis, which
+// survives module re-evaluation inside the same warm container.
 const cache =
-  globalThis.__adiCheckProMongoose ||
-  (globalThis.__adiCheckProMongoose = { conn: null, promise: null });
+  globalThis.__adiCheckProPg || (globalThis.__adiCheckProPg = { pool: null, ready: null });
 
-// Registered once per container, not per call, or the listeners pile up.
-if (!globalThis.__adiCheckProMongooseListeners) {
-  globalThis.__adiCheckProMongooseListeners = true;
-
-  mongoose.connection.on("error", (err) => {
-    console.error("MongoDB error:", err.message);
-  });
-
-  mongoose.connection.on("disconnected", () => {
-    // Drop the cache so the next request reconnects instead of using a
-    // handle that is no longer live.
-    cache.conn = null;
-    cache.promise = null;
-  });
+// A Postgres on this machine (for local testing) usually has no SSL.
+function isLocal(url) {
+  try {
+    return ["localhost", "127.0.0.1", "::1"].includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
 }
 
-async function connectDatabase() {
-  if (cache.conn) return cache.conn;
+// Connection strings copied from Supabase or Vercel often end in
+// "?sslmode=require". The pg driver reads that as "verify the certificate
+// chain", which Supabase's pooler fails, and it overrides the ssl option below.
+// Encryption is set by that option instead, so the parameter is dropped.
+function withoutSslParams(url) {
+  try {
+    const parsed = new URL(url);
+    ["sslmode", "sslrootcert", "sslcert", "sslkey", "supa"].forEach((key) =>
+      parsed.searchParams.delete(key)
+    );
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
 
-  if (!cache.promise) {
-    cache.promise = mongoose
-      .connect(env.mongoUri, {
-        // Without this, a query issued before the connection is ready waits
-        // in a buffer and eventually fails with "buffering timed out after
-        // 10000ms" - an error that says nothing about the real cause. With it
-        // off, the failure is immediate and names the actual problem.
-        bufferCommands: false,
-        serverSelectionTimeoutMS: 10000,
-        // Serverless containers are many and short-lived; a large pool per
-        // container exhausts the cluster's connection limit.
-        maxPoolSize: 10,
-      })
-      .then((instance) => {
-        console.log(`MongoDB connected: ${instance.connection.name}`);
-        return instance;
+function getPool() {
+  if (!cache.pool) {
+    cache.pool = new Pool({
+      connectionString: withoutSslParams(env.databaseUrl),
+      // Supabase only accepts encrypted connections.
+      ssl: isLocal(env.databaseUrl) ? false : { rejectUnauthorized: false },
+      // Serverless containers are many and short-lived; a large pool per
+      // container exhausts the database's connection limit.
+      max: 5,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+    });
+
+    // An idle client dropping must not crash the process.
+    cache.pool.on("error", (err) => {
+      console.error("Database error:", err.message);
+    });
+  }
+  return cache.pool;
+}
+
+// Opens the pool and checks it works, once per container.
+async function connectDatabase() {
+  if (!cache.ready) {
+    cache.ready = getPool()
+      .query("select current_database() as name")
+      .then(({ rows }) => {
+        console.log(`Database connected: ${rows[0].name}`);
       })
       .catch((err) => {
         // Do not cache a failure - let the next request try again.
-        cache.promise = null;
+        cache.ready = null;
         throw err;
       });
   }
+  return cache.ready;
+}
 
-  cache.conn = await cache.promise;
-  return cache.conn;
+function query(text, params) {
+  return getPool().query(text, params);
 }
 
 async function disconnectDatabase() {
-  cache.conn = null;
-  cache.promise = null;
-  await mongoose.disconnect();
-  console.log("MongoDB disconnected");
+  const { pool } = cache;
+  cache.pool = null;
+  cache.ready = null;
+  if (pool) await pool.end();
+  console.log("Database disconnected");
 }
 
-module.exports = { connectDatabase, disconnectDatabase };
+module.exports = { connectDatabase, disconnectDatabase, query };

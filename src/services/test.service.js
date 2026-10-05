@@ -20,7 +20,7 @@ async function createTest(instructorId, body) {
 
   // The centre must be one of this instructor's own centres.
   const user = await User.findById(instructorId);
-  const center = user.testCenters.id(centerId);
+  const center = user?.findTestCenter(centerId);
   if (!center) throw new ApiError(400, "That test centre is not on your list");
 
   const test = await Test.create({
@@ -39,11 +39,6 @@ async function createTest(instructorId, body) {
   });
 
   return test;
-}
-
-// A user's search text goes into a regex, so escape anything meaningful in it.
-function escapeRegex(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // "true"/"false" from the query string. Anything else means "no filter".
@@ -67,30 +62,17 @@ function endOfDay(value) {
     : new Date(value);
 }
 
-// Turns the query string into a mongo filter. Every filter is optional and
+// Turns the query string into test filters. Every filter is optional and
 // they all combine, so a search can be narrowed by date and intervention.
-function buildFilter(instructorId, { search, from, to, physicalIntervention, verbalIntervention }) {
-  const filter = { instructor: instructorId };
-
-  if (search && String(search).trim()) {
-    const pattern = new RegExp(escapeRegex(String(search).trim()), "i");
+function buildFilter({ search, from, to, physicalIntervention, verbalIntervention }) {
+  return {
     // Matches a pupil name or a test reference.
-    filter.$or = [{ pupilName: pattern }, { reference: pattern }];
-  }
-
-  if (from || to) {
-    filter.testDate = {};
-    if (from) filter.testDate.$gte = startOfDay(String(from));
-    if (to) filter.testDate.$lte = endOfDay(String(to));
-  }
-
-  const physical = toBool(physicalIntervention);
-  if (physical !== undefined) filter.physicalIntervention = physical;
-
-  const verbal = toBool(verbalIntervention);
-  if (verbal !== undefined) filter.verbalIntervention = verbal;
-
-  return filter;
+    search: search && String(search).trim() ? String(search).trim() : undefined,
+    from: from ? startOfDay(String(from)) : undefined,
+    to: to ? endOfDay(String(to)) : undefined,
+    physicalIntervention: toBool(physicalIntervention),
+    verbalIntervention: toBool(verbalIntervention),
+  };
 }
 
 // Server-side pagination and filtering: the client asks for one page at a time.
@@ -107,15 +89,10 @@ async function listTests(instructorId, { page = 1, limit = 10, ...filters } = {}
   const safePage =
     Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
 
-  const filter = buildFilter(instructorId, filters);
-
-  const [tests, total] = await Promise.all([
-    Test.find(filter)
-      .sort({ testDate: -1, createdAt: -1 })
-      .skip((safePage - 1) * safeLimit)
-      .limit(safeLimit),
-    Test.countDocuments(filter),
-  ]);
+  const { tests, total } = await Test.findPage(instructorId, buildFilter(filters), {
+    offset: (safePage - 1) * safeLimit,
+    limit: safeLimit,
+  });
 
   const totalPages = Math.max(Math.ceil(total / safeLimit), 1);
 
@@ -133,18 +110,21 @@ async function listTests(instructorId, { page = 1, limit = 10, ...filters } = {}
 
 // Only these change the performance rating. Editing a pupil name, date or
 // centre is record-keeping, so the score is left alone.
-const RATING_PATHS = [
-  "result",
-  "faults.driving",
-  "faults.serious",
-  "faults.dangerous",
-  "physicalIntervention",
-  "verbalIntervention",
-];
+function ratingFields(test) {
+  return JSON.stringify([
+    test.result,
+    test.faults.driving,
+    test.faults.serious,
+    test.faults.dangerous,
+    test.physicalIntervention,
+    test.verbalIntervention,
+  ]);
+}
 
 async function updateTest(instructorId, testId, body) {
-  const test = await Test.findOne({ _id: testId, instructor: instructorId });
+  const test = await Test.findOwned(instructorId, testId);
   if (!test) throw new ApiError(404, "Test not found");
+  const ratingBefore = ratingFields(test);
 
   if (body.pupilName !== undefined) {
     if (!String(body.pupilName).trim()) throw new ApiError(400, "Pupil name is required");
@@ -158,7 +138,7 @@ async function updateTest(instructorId, testId, body) {
 
   if (body.centerId !== undefined) {
     const user = await User.findById(instructorId);
-    const center = user.testCenters.id(body.centerId);
+    const center = user?.findTestCenter(body.centerId);
     if (!center) throw new ApiError(400, "That test centre is not on your list");
     // Re-snapshot, same as when the test was created.
     test.testCenter = { centerId: center._id, name: center.name, code: center.code };
@@ -172,9 +152,11 @@ async function updateTest(instructorId, testId, body) {
   }
 
   if (body.faults !== undefined) {
-    test.faults.driving = toCount(body.faults.driving);
-    test.faults.serious = toCount(body.faults.serious);
-    test.faults.dangerous = toCount(body.faults.dangerous);
+    test.faults = {
+      driving: toCount(body.faults.driving),
+      serious: toCount(body.faults.serious),
+      dangerous: toCount(body.faults.dangerous),
+    };
   }
 
   if (body.physicalIntervention !== undefined) {
@@ -185,17 +167,17 @@ async function updateTest(instructorId, testId, body) {
     test.verbalIntervention = Boolean(body.verbalIntervention);
   }
 
-  // Mongoose only flags a path as modified when the value actually changed,
-  // so re-saving the same numbers does not trigger a recalculation.
-  const affectsRating = RATING_PATHS.some((path) => test.isModified(path));
+  // Compared by value, so re-saving the same numbers does not trigger a
+  // recalculation.
+  const affectsRating = ratingFields(test) !== ratingBefore;
 
-  await test.save();
+  const saved = await Test.save(test);
 
-  return { test, affectsRating };
+  return { test: saved, affectsRating };
 }
 
 async function deleteTest(instructorId, testId) {
-  const test = await Test.findOneAndDelete({ _id: testId, instructor: instructorId });
+  const test = await Test.deleteOwned(instructorId, testId);
   if (!test) throw new ApiError(404, "Test not found");
 
   // Deleting a test usually moves the figures - but not if it was already
@@ -203,7 +185,7 @@ async function deleteTest(instructorId, testId) {
   const windowStart = new Date();
   windowStart.setMonth(windowStart.getMonth() - config.windowMonths);
 
-  return { test, affectsRating: test.testDate >= windowStart };
+  return { test, affectsRating: new Date(test.testDate) >= windowStart };
 }
 
 module.exports = { createTest, listTests, updateTest, deleteTest };

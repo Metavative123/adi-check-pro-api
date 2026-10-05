@@ -21,7 +21,7 @@ async function updateProfile(userId, body) {
 
   if (body.adiBadgeNumber !== undefined) {
     // Sending "" or null clears it, rather than storing an empty string
-    // (which would clash with other users on the unique index).
+    // (which would clash with other users on the unique constraint).
     const badge = (body.adiBadgeNumber || "").trim();
     user.adiBadgeNumber = badge || undefined;
   }
@@ -55,7 +55,7 @@ async function addTestCenter(userId, { name, code }) {
 async function updateTestCenter(userId, centerId, { name, code }) {
   const user = await getProfile(userId);
 
-  const center = user.testCenters.id(centerId);
+  const center = user.findTestCenter(centerId);
   if (!center) throw new ApiError(404, "Test centre not found on your list");
 
   if (name !== undefined) {
@@ -63,7 +63,7 @@ async function updateTestCenter(userId, centerId, { name, code }) {
 
     // Another centre on the list must not already have that name.
     const clash = user.testCenters.some(
-      (c) => c._id.toString() !== centerId && c.name.toLowerCase() === name.trim().toLowerCase()
+      (c) => c._id !== String(centerId) && c.name.toLowerCase() === name.trim().toLowerCase()
     );
     if (clash) throw new ApiError(409, "That test centre is already on your list");
 
@@ -79,10 +79,10 @@ async function updateTestCenter(userId, centerId, { name, code }) {
 async function removeTestCenter(userId, centerId) {
   const user = await getProfile(userId);
 
-  const center = user.testCenters.id(centerId);
+  const center = user.findTestCenter(centerId);
   if (!center) throw new ApiError(404, "Test centre not found on your list");
 
-  center.deleteOne();
+  user.testCenters = user.testCenters.filter((c) => c !== center);
   await user.save();
   return user;
 }

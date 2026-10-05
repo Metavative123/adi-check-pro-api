@@ -5,3 +5,4 @@ node_modules/
 # every env file except the shareable template
 .env*
 !.env.example
+.vercel

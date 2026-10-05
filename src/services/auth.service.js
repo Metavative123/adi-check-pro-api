@@ -7,7 +7,7 @@ const billingService = require("./billing.service");
 const RESET_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
 async function register({ name, email, password }) {
-  const exists = await User.findOne({ email });
+  const exists = await User.findByEmail(email);
   if (exists) throw new ApiError(409, "That email is already registered");
 
   // Free trial starts the moment the account is made - no card needed.
@@ -21,7 +21,7 @@ async function register({ name, email, password }) {
 }
 
 async function login({ email, password }) {
-  const user = await User.findOne({ email }).select("+password");
+  const user = await User.findByEmail(email);
   if (!user || !(await user.comparePassword(password))) {
     throw new ApiError(401, "Invalid email or password");
   }
@@ -30,7 +30,7 @@ async function login({ email, password }) {
 }
 
 async function forgotPassword({ email }) {
-  const user = await User.findOne({ email });
+  const user = await User.findByEmail(email);
 
   // Always answer the same way, so nobody can discover which emails exist.
   if (!user) return { resetToken: null };
@@ -46,14 +46,11 @@ async function forgotPassword({ email }) {
 }
 
 async function resetPassword({ token, password }) {
-  const user = await User.findOne({
-    resetTokenHash: hashResetToken(token),
-    resetTokenExpires: { $gt: new Date() },
-  }).select("+resetTokenHash +resetTokenExpires");
+  const user = await User.findByResetToken(hashResetToken(token));
 
   if (!user) throw new ApiError(400, "Reset link is invalid or has expired");
 
-  user.password = password;
+  await user.setPassword(password);
   user.resetTokenHash = undefined;
   user.resetTokenExpires = undefined;
   await user.save();

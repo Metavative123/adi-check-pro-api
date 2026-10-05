@@ -4,7 +4,6 @@
 //
 // Every query is filtered by instructor first: one instructor can never see,
 // search or compare another's pupils.
-const mongoose = require("mongoose");
 const Test = require("../models/test.model");
 const ApiError = require("../utils/ApiError");
 const scoring = require("./scoring");
@@ -17,7 +16,6 @@ function escapeRegex(text) {
 // Searching runs over every test the instructor has, not just a page of them,
 // and matches either the pupil's name or a test reference such as T-9F3A21.
 async function listPupils(instructorId, { search, limit = 10 } = {}) {
-  const owner = new mongoose.Types.ObjectId(instructorId);
   const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
 
   const term = search ? String(search).trim() : "";
@@ -25,51 +23,22 @@ async function listPupils(instructorId, { search, limit = 10 } = {}) {
 
   // Step one: which pupils match. A reference matches exactly one test, so
   // this stage only identifies the pupil - it cannot be used for counts.
-  const matchStage = { instructor: owner };
-  if (pattern) {
-    matchStage.$or = [{ pupilName: pattern }, { reference: pattern }];
-  }
-
-  const matched = await Test.aggregate([
-    { $match: matchStage },
-    {
-      $group: {
-        // Group case-insensitively so "sara khan" and "Sara Khan" are one
-        // pupil, however the name was typed on the day.
-        _id: { $toLower: "$pupilName" },
-        lastTestDate: { $max: "$testDate" },
-        references: { $addToSet: "$reference" },
-      },
-    },
-    { $sort: { lastTestDate: -1 } },
-    { $limit: safeLimit },
-  ]);
+  const matched = await Test.matchPupils(instructorId, term, safeLimit);
 
   if (matched.length === 0) return [];
 
   // Step two: count every test for those pupils. Counting the matched
   // documents instead would report "1 test" for a search by reference.
-  const nameFilters = matched.map((row) => ({
-    pupilName: new RegExp(`^${escapeRegex(row._id)}$`, "i"),
-  }));
+  // The name returned is the most recent spelling.
+  const rows = await Test.summarisePupils(
+    instructorId,
+    matched.map((row) => row.key)
+  );
 
-  const rows = await Test.aggregate([
-    { $match: { instructor: owner, $or: nameFilters } },
-    {
-      $group: {
-        _id: { $toLower: "$pupilName" },
-        name: { $last: "$pupilName" }, // the most recent spelling
-        tests: { $sum: 1 },
-        lastTestDate: { $max: "$testDate" },
-      },
-    },
-    { $sort: { lastTestDate: -1 } },
-  ]);
-
-  const matchedByKey = new Map(matched.map((row) => [row._id, row]));
+  const matchedByKey = new Map(matched.map((row) => [row.key, row]));
 
   return rows.map((row) => {
-    const hit = matchedByKey.get(row._id);
+    const hit = matchedByKey.get(row.key);
     // When the search was a test reference, show which test it found.
     const matchedReference =
       pattern && hit ? hit.references.find((ref) => ref && pattern.test(ref)) : undefined;
@@ -87,11 +56,7 @@ async function listPupils(instructorId, { search, limit = 10 } = {}) {
 async function getPupilSummary(instructorId, name) {
   if (!name || !String(name).trim()) throw new ApiError(400, "A pupil name is required");
 
-  const exact = new RegExp(`^${escapeRegex(String(name).trim())}$`, "i");
-
-  const tests = await Test.find({ instructor: instructorId, pupilName: exact }).sort({
-    testDate: -1,
-  });
+  const tests = await Test.findAll(instructorId, { pupilName: String(name).trim() });
 
   // Also a 404 when the pupil belongs to a different instructor, so the
   // response never reveals that the name exists elsewhere.

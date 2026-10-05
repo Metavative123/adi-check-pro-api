@@ -1,5 +1,13 @@
 const env = require("../config/env");
 
+// Unique constraints in db/schema.sql, named by the field the API calls them.
+const UNIQUE_FIELDS = {
+  users_email_key: "email",
+  users_adi_badge_number_key: "adiBadgeNumber",
+  tests_reference_key: "reference",
+  payments_stripe_invoice_id_key: "stripeInvoiceId",
+};
+
 // Runs when no route matched.
 function notFound(req, res, next) {
   res.status(404).json({
@@ -13,20 +21,21 @@ function errorHandler(err, req, res, next) {
   let statusCode = err.statusCode || 500;
   let message = err.message || "Something went wrong";
 
-  // Friendlier messages for the common Mongoose errors.
-  if (err.name === "ValidationError") {
-    statusCode = 400;
-    message = Object.values(err.errors)
-      .map((e) => e.message)
-      .join(", ");
-  }
-  if (err.name === "CastError") {
-    statusCode = 400;
-    message = `Invalid ${err.path}: ${err.value}`;
-  }
-  if (err.code === 11000) {
+  // Friendlier messages for the common Postgres errors.
+  if (err.code === "23505") {
+    // unique_violation
     statusCode = 409;
-    message = `${Object.keys(err.keyValue).join(", ")} already exists`;
+    message = `${UNIQUE_FIELDS[err.constraint] || "That value"} already exists`;
+  }
+  if (err.code === "22P02" || err.code === "22007" || err.code === "22008") {
+    // invalid text representation / invalid date
+    statusCode = 400;
+    message = "One of the values sent could not be read";
+  }
+  if (err.code === "23514") {
+    // check_violation
+    statusCode = 400;
+    message = "One of the values sent is not allowed";
   }
 
   if (statusCode === 500) console.error(err);

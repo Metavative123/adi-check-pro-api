@@ -1,17 +1,18 @@
 # ADI Check Pro API
 
-Express + MongoDB backend for the ADI Check Pro web app.
+Express + Supabase (Postgres) backend for the ADI Check Pro web app.
 
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env   # then fill in JWT_SECRET
+cp .env.example .env   # then fill in DATABASE_URL and JWT_SECRET
+npm run db:setup       # creates the tables in Supabase (safe to re-run)
 npm run dev            # nodemon, restarts on save
 npm start              # plain node
 ```
 
-MongoDB must be running (local `mongod` or a MongoDB Atlas URI in `MONGO_URI`).
+`DATABASE_URL` is the Supabase connection string (Project Settings -> Database). The table definitions live in `db/schema.sql`.
 
 ## Folder structure
 
@@ -23,7 +24,7 @@ src/
   routes/         url -> controller
   controllers/    read the request, send the response
   services/       the actual business logic
-  models/         mongoose schemas
+  models/         database queries, one file per table
   middlewares/    auth (protect, restrictTo) and error handling
   utils/          connectDatabase, ApiError, token helpers
 ```
