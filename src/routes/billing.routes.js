@@ -6,6 +6,9 @@ const router = express.Router();
 
 // The webhook is mounted separately in app.js - it needs the raw body and
 // must not require a signed-in user.
+// Public: the founding member countdown on the sign-up page.
+router.get("/founding", billingController.getFoundingCount);
+
 router.use(protect);
 
 router.get("/", billingController.getBilling);

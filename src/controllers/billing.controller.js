@@ -1,4 +1,5 @@
 const billingService = require("../services/billing.service");
+const plansConfig = require("../config/plans");
 
 async function getBilling(req, res) {
   // sync=1 asks Stripe for the current state, so development works without
@@ -11,7 +12,17 @@ async function getBilling(req, res) {
 
 // The plans on offer. Public to any signed-in user, whatever their state.
 async function getPlans(req, res) {
-  res.json({ success: true, data: billingService.listPlans() });
+  res.json({ success: true, data: await billingService.listPlans(req.user) });
+}
+
+// Public: the founding countdown, for pages shown before sign-in.
+async function getFoundingCount(req, res) {
+  const { limit, taken, left } = await billingService.foundingFor(null);
+  const plan = plansConfig.getPlan("founding");
+  res.json({
+    success: true,
+    data: { founding: { limit, taken, left, amount: plan.amount, currency: plan.currency } },
+  });
 }
 
 // Taking the free trial - no card, no Stripe.
@@ -78,6 +89,7 @@ async function webhook(req, res) {
 module.exports = {
   getBilling,
   getPlans,
+  getFoundingCount,
   chooseTrial,
   confirmCheckout,
   cancelSubscription,

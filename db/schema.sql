@@ -93,3 +93,16 @@ create index if not exists payments_intent_idx on payments (stripe_payment_inten
 alter table users enable row level security;
 alter table tests enable row level security;
 alter table payments enable row level security;
+
+-- Founding member places: numbered 1 to 50 and never given back. A place is
+-- taken when a member's first founding payment goes through and stays taken
+-- even if they cancel, so only 50 people can ever have the founding price.
+create table if not exists founding_places (
+  place      integer primary key check (place between 1 and 50),
+  -- unique: one place per person. Kept (as null) if the account is deleted,
+  -- so the place is still used up.
+  user_id    uuid unique references users (id) on delete set null,
+  claimed_at timestamptz not null default now()
+);
+
+alter table founding_places enable row level security;

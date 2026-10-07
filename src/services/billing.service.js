@@ -7,6 +7,7 @@
 const Stripe = require("stripe");
 const User = require("../models/user.model");
 const Payment = require("../models/payment.model");
+const Founding = require("../models/founding.model");
 const ApiError = require("../utils/ApiError");
 const config = require("../config/stripe");
 const plansConfig = require("../config/plans");
@@ -45,13 +46,32 @@ function startTrial() {
   };
 }
 
+// Whether this user may still take the founding price: places are left and
+// they have never held one. A member who cancels keeps their place number,
+// so they cannot take the price a second time.
+async function foundingFor(user) {
+  const counts = await Founding.counts();
+  const place = user ? await Founding.placeFor(user._id) : null;
+  return { ...counts, place, eligible: counts.left > 0 && !place };
+}
+
 // The plans on offer, with their discounts worked out. Safe to call with
 // billing switched off - it just describes what would be available.
-function listPlans() {
+//
+// The founding plan is only listed while this user can take it, or while it
+// is the plan they are on. `founding` carries the countdown.
+async function listPlans(user) {
+  const founding = await foundingFor(user);
+  const onFounding =
+    user?.subscription?.planId === "founding" && user.subscription.status === "active";
+
   return {
     currency: plansConfig.currency,
     trialDays: plansConfig.trialDays,
-    plans: plansConfig.plans.map((plan) => ({
+    founding: { limit: founding.limit, taken: founding.taken, left: founding.left, place: founding.place },
+    plans: plansConfig.plans
+      .filter((plan) => !plan.founding || founding.eligible || onFounding)
+      .map((plan) => ({
       id: plan.id,
       name: plan.name,
       blurb: plan.blurb,
@@ -62,6 +82,8 @@ function listPlans() {
       saving: plan.saving,
       savingPercent: plan.savingPercent,
       hasDiscount: plan.hasDiscount,
+      freeMonths: plan.freeMonths,
+      founding: Boolean(plan.founding),
       currency: plan.currency,
       configured: plan.configured,
     })),
@@ -123,6 +145,10 @@ async function createCheckoutSession(userId, { planId, successUrl, cancelUrl }) 
 
   if (user.subscription?.status === "active") {
     throw new ApiError(409, "You already have an active subscription");
+  }
+
+  if (plan.founding && !(await foundingFor(user)).eligible) {
+    throw new ApiError(409, "All founding member places have gone, or you have had one before");
   }
 
   const customerId = await getOrCreateCustomer(user);
@@ -238,7 +264,7 @@ async function recordInvoice(invoice, user) {
     }
   }
 
-  return Payment.upsertByInvoice({
+  const payment = await Payment.upsertByInvoice({
     instructor: owner._id,
     stripeInvoiceId: invoice.id,
     stripePaymentIntentId: paymentIntentId,
@@ -255,6 +281,44 @@ async function recordInvoice(invoice, user) {
     receiptUrl: invoice.hosted_invoice_url || undefined,
     invoiceUrl: invoice.invoice_pdf || undefined,
   });
+
+  if (paid && isFoundingInvoice(invoice, line, owner)) await claimFounding(owner);
+
+  return payment;
+}
+
+// True when this invoice charges the founding price. Read from the price on
+// the line, with the plan recorded on the subscription as a fallback (a webhook
+// can arrive before the subscription itself has been applied).
+function isFoundingInvoice(invoice, line, owner) {
+  const founding = plansConfig.getPlan("founding");
+  const priceId = line?.price?.id || line?.pricing?.price_details?.price;
+  if (founding?.priceId && priceId === founding.priceId) return true;
+
+  const planId =
+    invoice.parent?.subscription_details?.metadata?.planId ||
+    invoice.subscription_details?.metadata?.planId ||
+    owner.subscription?.planId;
+  return planId === "founding";
+}
+
+// The member's first founding payment has gone through: give them a place.
+// Safe to call again for the same member - they keep the place they have.
+async function claimFounding(user) {
+  const place = await Founding.claim(user._id);
+
+  if (!place) {
+    // Only possible if two payments raced for the last place. They have paid,
+    // so the price is honoured; this is logged so it can be looked at.
+    console.error(`Founding places full, but ${user._id} paid the founding price`);
+    return null;
+  }
+
+  if (user.subscription.foundingPlace !== place) {
+    user.subscription.foundingPlace = place;
+    await user.save();
+  }
+  return place;
 }
 
 // Called when Stripe sends the customer back after Checkout. Applies the
@@ -433,7 +497,7 @@ async function getBilling(userId, { sync = false } = {}) {
   if (!config.enabled) {
     return {
       enabled: false,
-      ...listPlans(),
+      ...(await listPlans(user)),
       planSelected: true,
       planId: null,
       needsPlanChoice: false,
@@ -452,7 +516,7 @@ async function getBilling(userId, { sync = false } = {}) {
 
   return {
     enabled: true,
-    ...listPlans(),
+    ...(await listPlans(user)),
     planSelected: Boolean(sub.planSelected),
     planId: sub.planId || null,
     needsPlanChoice: user.needsPlanChoice,
@@ -557,6 +621,7 @@ async function handleEvent(event) {
 module.exports = {
   startTrial,
   listPlans,
+  foundingFor,
   chooseTrial,
   confirmCheckout,
   cancelSubscription,

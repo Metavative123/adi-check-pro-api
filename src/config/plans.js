@@ -31,7 +31,7 @@ function num(name, fallback) {
 
 const currency = (process.env.BILLING_CURRENCY || "gbp").toLowerCase();
 
-// Amounts are in the smallest unit: 1900 = GBP 19.00.
+// Amounts are in the smallest unit: 999 = GBP 9.99.
 //
 // These are deliberately plain numbers rather than environment variables:
 // the price lives in ONE place, in version control. Change it here, then run
@@ -40,11 +40,26 @@ const currency = (process.env.BILLING_CURRENCY || "gbp").toLowerCase();
 // mode and live mode have different ones.
 const PLANS = [
   {
+    // The first FOUNDING_LIMIT members to pay. They keep this price for as
+    // long as they stay subscribed; a place is used up for good once taken,
+    // even if that member later cancels.
+    id: "founding",
+    name: "Founding member",
+    founding: true,
+    months: 1,
+    amount: 599, // GBP 5.99
+    interval: "month",
+    intervalCount: 1,
+    priceId: process.env.PLAN_FOUNDING_PRICE_ID || "",
+    lookupKey: "adi_check_pro_founding",
+    blurb: "Locked in for as long as you stay subscribed",
+  },
+  {
     id: "monthly",
     name: "Monthly",
     // months of access, used to work out the saving against the monthly rate
     months: 1,
-    amount: 1900, // GBP 19.00
+    amount: 999, // GBP 9.99
     // How Stripe should bill it.
     interval: "month",
     intervalCount: 1,
@@ -56,28 +71,31 @@ const PLANS = [
     id: "sixmonth",
     name: "6 months",
     months: 6,
-    amount: 9900, // GBP 99.00
+    amount: 4995, // GBP 49.95 - one month free (5 x 9.99)
     interval: "month",
     intervalCount: 6,
     priceId: process.env.PLAN_SIXMONTH_PRICE_ID || "",
     lookupKey: "adi_check_pro_sixmonth",
-    blurb: "Billed twice a year",
+    blurb: "One month free, billed twice a year",
   },
   {
     id: "yearly",
     name: "12 months",
     months: 12,
-    amount: 15950, // GBP 159.00
+    amount: 9990, // GBP 99.90 - two months free (10 x 9.99)
     interval: "year",
     intervalCount: 1,
     priceId: process.env.PLAN_YEARLY_PRICE_ID || "",
     lookupKey: "adi_check_pro_yearly",
-    blurb: "Best value, billed once a year",
+    blurb: "Two months free, billed once a year",
   },
 ];
 
+// How many founding places there are, ever.
+const FOUNDING_LIMIT = 50;
+
 // The monthly plan is the yardstick every discount is measured against.
-const baseline = PLANS.find((plan) => plan.months === 1);
+const baseline = PLANS.find((plan) => plan.id === "monthly");
 
 // Works out the saving rather than storing it, so changing an amount updates
 // the advertised discount automatically and the two can never disagree.
@@ -96,12 +114,19 @@ function withPricing(plan) {
     saving,
     savingPercent,
     hasDiscount: savingPercent > 0,
+    // The saving in whole months of the monthly price, e.g. 1 for the
+    // 6-month plan. 0 when it does not come to whole months.
+    freeMonths:
+      baseline && plan.id !== "founding" && saving > 0 && saving % baseline.amount === 0
+        ? saving / baseline.amount
+        : 0,
     configured: Boolean(plan.priceId),
   };
 }
 
 module.exports = {
   currency,
+  foundingLimit: FOUNDING_LIMIT,
   trialDays: num("BILLING_TRIAL_DAYS", 14),
   plans: PLANS.map(withPricing),
   getPlan: (id) => PLANS.map(withPricing).find((plan) => plan.id === id),

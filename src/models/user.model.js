@@ -17,6 +17,9 @@ const { isUuid, compact } = require("../utils/rows");
 //   trialCancelled
 //                the instructor will not continue after the trial; the trial
 //                still runs to its end date.
+//   foundingPlace
+//                1-50 once their first founding payment has gone through
+//                (see founding_places). Kept after cancelling.
 const SUBSCRIPTION_DEFAULTS = {
   status: "trialing",
   plan: "trial",
