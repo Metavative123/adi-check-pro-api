@@ -1,7 +1,7 @@
 const Test = require("../models/test.model");
 const User = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
-const config = require("../config/performance");
+const scoring = require("./scoring");
 
 // Counts come from the wizard as strings sometimes - make them safe numbers.
 function toCount(value) {
@@ -26,7 +26,7 @@ async function createTest(instructorId, body) {
   const test = await Test.create({
     instructor: instructorId,
     pupilName,
-    testDate,
+    testDate: toTestDate(testDate),
     testCenter: { centerId: center._id, name: center.name, code: center.code },
     result,
     faults: {
@@ -46,6 +46,18 @@ function toBool(value) {
   if (value === "true" || value === true) return true;
   if (value === "false" || value === false) return false;
   return undefined;
+}
+
+// A test date is a whole day, stored as 00:00 UTC so the rolling window can
+// compare it to the day. Anything unreadable is turned away here rather than
+// reaching the database.
+function toTestDate(value) {
+  const text = String(value || "").trim();
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? new Date(`${text}T00:00:00.000Z`)
+    : new Date(text);
+  if (Number.isNaN(date.getTime())) throw new ApiError(400, "Test date could not be read");
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
 // Dates arrive as YYYY-MM-DD. Read them as whole UTC days so the last day of
@@ -133,7 +145,7 @@ async function updateTest(instructorId, testId, body) {
 
   if (body.testDate !== undefined) {
     if (!body.testDate) throw new ApiError(400, "Test date is required");
-    test.testDate = body.testDate;
+    test.testDate = toTestDate(body.testDate);
   }
 
   if (body.centerId !== undefined) {
@@ -182,10 +194,7 @@ async function deleteTest(instructorId, testId) {
 
   // Deleting a test usually moves the figures - but not if it was already
   // outside the rating window, where it was not being counted anyway.
-  const windowStart = new Date();
-  windowStart.setMonth(windowStart.getMonth() - config.windowMonths);
-
-  return { test, affectsRating: new Date(test.testDate) >= windowStart };
+  return { test, affectsRating: new Date(test.testDate) >= scoring.ratingWindowStart() };
 }
 
 module.exports = { createTest, listTests, updateTest, deleteTest };

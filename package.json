@@ -9,7 +9,8 @@
     "db:setup": "node scripts/db-setup.js",
     "stripe:setup": "node scripts/stripe-setup.js",
     "webhook:test": "node scripts/test-webhook.js",
-    "stripe:check": "node scripts/stripe-check.js"
+    "stripe:check": "node scripts/stripe-check.js",
+    "test": "node --test test/"
   },
   "author": "",
   "license": "ISC",

@@ -10,8 +10,7 @@ const scoring = require("./scoring");
 const { windowMonths, minTests, thresholds } = config;
 
 async function getPerformance(instructorId) {
-  const windowStart = new Date();
-  windowStart.setMonth(windowStart.getMonth() - windowMonths);
+  const windowStart = scoring.ratingWindowStart();
 
   const tests = await Test.findAll(instructorId, { from: windowStart });
 
@@ -21,6 +20,7 @@ async function getPerformance(instructorId) {
   if (totals.tests === 0) {
     return {
       windowMonths,
+      windowStart,
       total: 0,
       passed: 0,
       minTests,
@@ -37,6 +37,8 @@ async function getPerformance(instructorId) {
 
   return {
     windowMonths,
+    // The oldest test date still counted, so the UI can say "since ...".
+    windowStart,
     total: totals.tests,
     passed: totals.passed,
     minTests,

@@ -60,6 +60,41 @@ const METRICS = [
   },
 ];
 
+// Today's date in the UK, as YYYY-MM-DD. The window turns over at UK
+// midnight, not at midnight UTC or on whatever clock the server runs.
+function ukDate(now) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+// The rolling window: the first test date that still counts, at 00:00 UTC
+// (test dates are stored as whole days at 00:00 UTC).
+//
+// A test counts for exactly `windowMonths` months and drops off on the
+// anniversary of its test date. With a 12-month window, a test taken on
+// 7 Oct 2025 counts up to and including 6 Oct 2026, and is gone on
+// 7 Oct 2026. Recalculated on every request, so the window always revolves.
+//
+// The anniversary of a day the target month does not have (29 Feb, 31st)
+// falls on that month's last day.
+function ratingWindowStart(now = new Date(), months = config.windowMonths) {
+  const [year, month, day] = ukDate(now).split("-").map(Number);
+
+  const anniversary = new Date(Date.UTC(year, month - 1 - months, 1));
+  const daysInMonth = new Date(
+    Date.UTC(anniversary.getUTCFullYear(), anniversary.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+  anniversary.setUTCDate(Math.min(day, daysInMonth));
+
+  // Tests dated on the anniversary itself have just dropped off.
+  anniversary.setUTCDate(anniversary.getUTCDate() + 1);
+  return anniversary;
+}
+
 function emptyTotals() {
   return {
     tests: 0,
@@ -220,6 +255,7 @@ module.exports = {
   METRICS,
   POINTS_PER_METRIC,
   round,
+  ratingWindowStart,
   emptyTotals,
   totalsFrom,
   metricsFrom,
