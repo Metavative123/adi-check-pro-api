@@ -122,19 +122,22 @@ function totalsFrom(tests) {
   }, emptyTotals());
 }
 
+// Shown alongside the four rated metrics, as DVSA's ADI report does, but for
+// information only: no threshold, no trigger, no effect on the score. Serious
+// and dangerous faults are kept apart - the 0.55 trigger is serious faults only.
+const INFO_METRICS = [
+  {
+    key: "dangerousFaultAverage",
+    compute: (t, n) => round(t.dangerous / n, 2),
+  },
+];
+
 function metricsFrom(totals) {
   const n = totals.tests;
-  if (!n) {
-    return {
-      drivingFaultAverage: 0,
-      seriousFaultAverage: 0,
-      physicalInterventionRate: 0,
-      passRate: 0,
-    };
-  }
+  const all = [...METRICS, ...INFO_METRICS];
 
-  return METRICS.reduce((acc, metric) => {
-    acc[metric.key] = metric.compute(totals, n);
+  return all.reduce((acc, metric) => {
+    acc[metric.key] = n ? metric.compute(totals, n) : 0;
     return acc;
   }, {});
 }

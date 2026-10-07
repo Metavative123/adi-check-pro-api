@@ -67,6 +67,7 @@ test("each fault category feeds only its own figure", () => {
   );
   assert.equal(metrics.drivingFaultAverage, 5); // 20 / 4
   assert.equal(metrics.seriousFaultAverage, 0.75); // 3 / 4 - dangerous not included
+  assert.equal(metrics.dangerousFaultAverage, 0.25); // 1 / 4 - serious not included
   assert.equal(metrics.physicalInterventionRate, 25); // 1 of 4 tests
   assert.equal(metrics.passRate, 50); // 2 of 4
 });
@@ -79,6 +80,22 @@ test("several examiner actions on one test count as one test with intervention",
   ]);
   assert.equal(totals.interventions, 1);
   assert.equal(scoring.metricsFrom(totals).physicalInterventionRate, 50);
+});
+
+test("the dangerous fault average is information only", () => {
+  const clean = scoring.metricsFrom(scoring.totalsFrom([aTest(), aTest()]));
+  const withDangerous = scoring.metricsFrom(
+    scoring.totalsFrom([aTest({ faults: { driving: 0, serious: 0, dangerous: 3 } }), aTest()])
+  );
+
+  assert.equal(withDangerous.dangerousFaultAverage, 1.5);
+  assert.equal(withDangerous.seriousFaultAverage, 0);
+  assert.deepEqual(scoring.triggersFrom(withDangerous), scoring.triggersFrom(clean));
+  assert.equal(
+    scoring.scoreBreakdown(withDangerous).total,
+    scoring.scoreBreakdown(clean).total,
+    "dangerous faults must not change the score"
+  );
 });
 
 // --- 2. Rolling 12-month window ----------------------------------------------
