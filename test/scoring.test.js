@@ -68,6 +68,7 @@ test("each fault category feeds only its own figure", () => {
   assert.equal(metrics.drivingFaultAverage, 5); // 20 / 4
   assert.equal(metrics.seriousFaultAverage, 0.75); // 3 / 4 - dangerous not included
   assert.equal(metrics.dangerousFaultAverage, 0.25); // 1 / 4 - serious not included
+  assert.equal(metrics.seriousDangerousFaultAverage, 1); // (3 + 1) / 4, each fault once
   assert.equal(metrics.physicalInterventionRate, 25); // 1 of 4 tests
   assert.equal(metrics.passRate, 50); // 2 of 4
 });
@@ -90,6 +91,7 @@ test("the dangerous fault average is information only", () => {
 
   assert.equal(withDangerous.dangerousFaultAverage, 1.5);
   assert.equal(withDangerous.seriousFaultAverage, 0);
+  assert.equal(withDangerous.seriousDangerousFaultAverage, 1.5);
   assert.deepEqual(scoring.triggersFrom(withDangerous), scoring.triggersFrom(clean));
   assert.equal(
     scoring.scoreBreakdown(withDangerous).total,

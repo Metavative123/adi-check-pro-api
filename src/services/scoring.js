@@ -130,6 +130,12 @@ const INFO_METRICS = [
     key: "dangerousFaultAverage",
     compute: (t, n) => round(t.dangerous / n, 2),
   },
+  // Fail-level faults per test, at a glance. Shown next to the separate
+  // serious and dangerous averages, never instead of them.
+  {
+    key: "seriousDangerousFaultAverage",
+    compute: (t, n) => round((t.serious + t.dangerous) / n, 2),
+  },
 ];
 
 function metricsFrom(totals) {
