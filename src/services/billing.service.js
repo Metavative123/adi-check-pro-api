@@ -116,9 +116,25 @@ async function chooseTrial(userId) {
   return user;
 }
 
+// True when Stripe says the customer does not exist in this account - for
+// example one created under an older Stripe account before keys were changed.
+function isMissingCustomer(err) {
+  return err?.code === "resource_missing" || err?.raw?.code === "resource_missing";
+}
+
 // Every customer is created lazily, on the first checkout.
 async function getOrCreateCustomer(user) {
-  if (user.subscription?.stripeCustomerId) return user.subscription.stripeCustomerId;
+  const existing = user.subscription?.stripeCustomerId;
+  if (existing) {
+    try {
+      const customer = await requireStripe().customers.retrieve(existing);
+      if (!customer.deleted) return existing;
+    } catch (err) {
+      if (!isMissingCustomer(err)) throw err;
+    }
+    // Gone from this Stripe account: forget it and make a new one below.
+    user.subscription.stripeCustomerId = undefined;
+  }
 
   const customer = await requireStripe().customers.create({
     email: user.email,
@@ -195,12 +211,16 @@ async function createPortalSession(userId, returnUrl) {
     throw new ApiError(400, "There is no billing account to manage yet");
   }
 
-  const session = await stripe.billingPortal.sessions.create({
-    customer: user.subscription.stripeCustomerId,
-    return_url: returnUrl || config.successUrl,
-  });
-
-  return { url: session.url };
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.subscription.stripeCustomerId,
+      return_url: returnUrl || config.successUrl,
+    });
+    return { url: session.url };
+  } catch (err) {
+    if (isMissingCustomer(err)) throw new ApiError(400, "There is no billing account to manage yet");
+    throw err;
+  }
 }
 
 // Copies a Stripe subscription onto the user.
@@ -470,11 +490,18 @@ async function syncFromStripe(userId) {
   const customerId = user.subscription?.stripeCustomerId;
   if (!config.enabled || !stripe || !customerId) return user;
 
-  const subscriptions = await stripe.subscriptions.list({
-    customer: customerId,
-    status: "all",
-    limit: 10,
-  });
+  let subscriptions;
+  try {
+    subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 10,
+    });
+  } catch (err) {
+    // A customer from an older Stripe account has nothing to sync here.
+    if (isMissingCustomer(err)) return user;
+    throw err;
+  }
 
   if (subscriptions.data.length === 0) return user;
 
