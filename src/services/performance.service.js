@@ -21,6 +21,7 @@ async function getPerformance(instructorId) {
     return {
       windowMonths,
       windowStart,
+      passRateTarget: config.scoring.passRateTarget,
       total: 0,
       passed: 0,
       minTests,
@@ -39,6 +40,8 @@ async function getPerformance(instructorId) {
     windowMonths,
     // The oldest test date still counted, so the UI can say "since ...".
     windowStart,
+    // Where the pass rate earns full marks; the gauge turns green from here.
+    passRateTarget: config.scoring.passRateTarget,
     total: totals.tests,
     passed: totals.passed,
     minTests,
