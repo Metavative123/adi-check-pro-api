@@ -45,6 +45,14 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
 
   const tests = await Test.findAll(instructorId, { from: start, to: end }, { order: "oldest" });
 
+  // Is the chosen period exactly the standard window (12 months ending on the
+  // "to" date)? If it also ends today, it is the dashboard's period exactly.
+  const fromIso = start.toISOString().slice(0, 10);
+  const toIso = end.toISOString().slice(0, 10);
+  const windowForTo = scoring.ratingWindowStart(new Date(`${toIso}T12:00:00.000Z`));
+  const isStandardWindow = windowForTo.toISOString().slice(0, 10) === fromIso;
+  const matchesDashboard = isStandardWindow && toIso === scoring.ukDate(new Date());
+
   const totals = scoring.totalsFrom(tests);
   const metrics = scoring.metricsFrom(totals);
   const triggers = totals.tests ? scoring.triggersFrom(metrics) : [];
@@ -58,6 +66,11 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
       from: DATE_ONLY.test(String(from)) ? String(from) : start.toISOString().slice(0, 10),
       to: DATE_ONLY.test(String(to)) ? String(to) : end.toISOString().slice(0, 10),
       label: `${formatDate(start)} to ${formatDate(end)}`,
+      // True when the period is exactly the standard rolling window.
+      isStandardWindow,
+      // True when it is also the period the dashboard shows today.
+      matchesDashboard,
+      windowMonths: config.windowMonths,
     },
 
     instructor: {
@@ -92,10 +105,13 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
 
     // True when the chosen period is not the standard rating window, so the
     // report can say so rather than implying these are the official figures.
-    windowNote:
-      `Thresholds are defined against a rolling ${config.windowMonths}-month window. ` +
-      `This report covers the period selected above, so the figures may differ from ` +
-      `the ${config.windowMonths}-month rating shown in the app.`,
+    // Only when the period is not the standard window: then the figures can
+    // differ from the dashboard, and the report says so.
+    windowNote: isStandardWindow
+      ? null
+      : `Thresholds are defined against a rolling ${config.windowMonths}-month window. ` +
+        `This report covers the period selected above, so the figures may differ from ` +
+        `the ${config.windowMonths}-month rating shown in the app.`,
 
     tests: tests.map((t) => ({
       reference: t.reference,

@@ -14,6 +14,9 @@ function round(value, places = 2) {
   return Math.round(value * factor) / factor;
 }
 
+// "1 test", "2 tests".
+const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
 // The four metrics, described once. `kind` says which direction is bad:
 // "lower" metrics trigger at or ABOVE their threshold, "higher" at or BELOW.
 const METRICS = [
@@ -24,7 +27,8 @@ const METRICS = [
     unit: "",
     decimals: 2,
     meaning: "Total driving faults divided by the number of tests.",
-    formula: (t, n) => `${t.driving} driving faults / ${n} tests`,
+    formula: (t, n) =>
+      `${count(t.driving, "driving fault", "driving faults")} / ${count(n, "test", "tests")}`,
     compute: (t, n) => round(t.driving / n, 2),
   },
   {
@@ -34,7 +38,8 @@ const METRICS = [
     unit: "",
     decimals: 2,
     meaning: "Total serious faults divided by the number of tests.",
-    formula: (t, n) => `${t.serious} serious faults / ${n} tests`,
+    formula: (t, n) =>
+      `${count(t.serious, "serious fault", "serious faults")} / ${count(n, "test", "tests")}`,
     compute: (t, n) => round(t.serious / n, 2),
   },
   {
@@ -45,7 +50,8 @@ const METRICS = [
     decimals: 1,
     meaning:
       "Tests where the examiner physically intervened, as a percentage of all tests.",
-    formula: (t, n) => `(${t.interventions} tests with intervention / ${n} tests) x 100`,
+    formula: (t, n) =>
+      `(${count(t.interventions, "test", "tests")} with physical intervention / ${count(n, "test", "tests")}) x 100`,
     compute: (t, n) => round((t.interventions / n) * 100, 1),
   },
   {
@@ -55,7 +61,8 @@ const METRICS = [
     unit: "%",
     decimals: 1,
     meaning: "Tests passed as a percentage of all tests.",
-    formula: (t, n) => `(${t.passed} passes / ${n} tests) x 100`,
+    formula: (t, n) =>
+      `(${count(t.passed, "pass", "passes")} / ${count(n, "test", "tests")}) x 100`,
     compute: (t, n) => round((t.passed / n) * 100, 1),
   },
 ];
@@ -246,6 +253,8 @@ function ruleSummary() {
     pointsPerMetric: POINTS_PER_METRIC,
     redTriggers: bands.redTriggers,
     amberTriggers: bands.amberTriggers,
+    // How many triggers before a DVSA standards check is likely. Same line as red.
+    standardsCheckAt: bands.redTriggers,
     thresholds,
     metrics: METRICS.map((m) => ({
       key: m.key,
@@ -264,6 +273,7 @@ module.exports = {
   METRICS,
   POINTS_PER_METRIC,
   round,
+  ukDate,
   ratingWindowStart,
   emptyTotals,
   totalsFrom,

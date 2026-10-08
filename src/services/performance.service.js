@@ -22,6 +22,7 @@ async function getPerformance(instructorId) {
       windowMonths,
       windowStart,
       passRateTarget: config.scoring.passRateTarget,
+    standardsCheckAt: config.bands.redTriggers,
       total: 0,
       passed: 0,
       minTests,
@@ -42,6 +43,7 @@ async function getPerformance(instructorId) {
     windowStart,
     // Where the pass rate earns full marks; the gauge turns green from here.
     passRateTarget: config.scoring.passRateTarget,
+    standardsCheckAt: config.bands.redTriggers,
     total: totals.tests,
     passed: totals.passed,
     minTests,

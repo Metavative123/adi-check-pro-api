@@ -135,3 +135,30 @@ test("month ends and leap days are handled", () => {
   // 31 Mar looking back 1 month lands on the last day of February.
   assert.equal(iso(scoring.ratingWindowStart(new Date("2027-03-31T12:00:00Z"), 1)), "2027-03-01");
 });
+
+// --- 3. Result must agree with the faults ------------------------------------
+
+const { resultProblem } = require("../src/services/testRules");
+
+test("a fail needs a serious or dangerous fault, or 16+ driving faults", () => {
+  const f = (driving, serious, dangerous) => ({ driving, serious, dangerous });
+  assert.ok(resultProblem({ result: "fail", faults: f(0, 0, 0) }), "Amy Drysdale's case");
+  assert.ok(resultProblem({ result: "fail", faults: f(1, 0, 0) }), "Harry Kane's case");
+  assert.ok(resultProblem({ result: "fail", faults: f(15, 0, 0) }));
+  assert.equal(resultProblem({ result: "fail", faults: f(16, 0, 0) }), null);
+  assert.equal(resultProblem({ result: "fail", faults: f(2, 1, 0) }), null);
+  assert.equal(resultProblem({ result: "fail", faults: f(0, 0, 1) }), null);
+});
+
+test("a pass has no serious or dangerous faults and at most 15 driving faults", () => {
+  const f = (driving, serious, dangerous) => ({ driving, serious, dangerous });
+  assert.equal(resultProblem({ result: "pass", faults: f(15, 0, 0) }), null);
+  assert.ok(resultProblem({ result: "pass", faults: f(16, 0, 0) }));
+  assert.ok(resultProblem({ result: "pass", faults: f(3, 1, 0) }));
+  assert.ok(resultProblem({ result: "pass", faults: f(3, 0, 1) }));
+});
+
+test("a report period of exactly 12 months is the standard window", () => {
+  // 12 months ending 7 Oct 2026 starts 8 Oct 2025 - the dashboard's window.
+  assert.equal(iso(scoring.ratingWindowStart(new Date("2026-10-07T12:00:00Z"), 12)), "2025-10-08");
+});

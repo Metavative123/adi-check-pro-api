@@ -2,6 +2,7 @@ const Test = require("../models/test.model");
 const User = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
 const scoring = require("./scoring");
+const { resultProblem } = require("./testRules");
 
 // Counts come from the wizard as strings sometimes - make them safe numbers.
 function toCount(value) {
@@ -23,17 +24,21 @@ async function createTest(instructorId, body) {
   const center = user?.findTestCenter(centerId);
   if (!center) throw new ApiError(400, "That test centre is not on your list");
 
+  const counted = {
+    driving: toCount(faults.driving),
+    serious: toCount(faults.serious),
+    dangerous: toCount(faults.dangerous),
+  };
+  const problem = resultProblem({ result, faults: counted });
+  if (problem) throw new ApiError(400, problem);
+
   const test = await Test.create({
     instructor: instructorId,
     pupilName,
     testDate: toTestDate(testDate),
     testCenter: { centerId: center._id, name: center.name, code: center.code },
     result,
-    faults: {
-      driving: toCount(faults.driving),
-      serious: toCount(faults.serious),
-      dangerous: toCount(faults.dangerous),
-    },
+    faults: counted,
     physicalIntervention: Boolean(body.physicalIntervention),
     verbalIntervention: Boolean(body.verbalIntervention),
   });
@@ -178,6 +183,11 @@ async function updateTest(instructorId, testId, body) {
   if (body.verbalIntervention !== undefined) {
     test.verbalIntervention = Boolean(body.verbalIntervention);
   }
+
+  // Checked on the finished test, so an old record that broke the rule has to
+  // be put right when it is next edited.
+  const problem = resultProblem(test);
+  if (problem) throw new ApiError(400, problem);
 
   // Compared by value, so re-saving the same numbers does not trigger a
   // recalculation.
