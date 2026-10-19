@@ -31,6 +31,10 @@ function fromRow(row) {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }),
+    // "detailed" (fault by fault on the DL25) or "totals" (the three totals only).
+    faultEntry: row.fault_items ? "detailed" : "totals",
+    // Each DL25 item marked; null for a test entered as totals only.
+    faultItems: row.fault_items || null,
     totalFaults: faults.driving + faults.serious + faults.dangerous,
     id: row.id,
   };
@@ -113,8 +117,8 @@ async function create(test) {
            instructor_id, reference, pupil_name, test_date,
            test_center_id, test_center_name, test_center_code,
            result, driving_faults, serious_faults, dangerous_faults,
-           physical_intervention, verbal_intervention
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           physical_intervention, verbal_intervention, fault_items
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          returning *`,
         [
           test.instructor,
@@ -130,6 +134,7 @@ async function create(test) {
           test.faults.dangerous,
           test.physicalIntervention,
           test.verbalIntervention,
+          test.faultItems ? JSON.stringify(test.faultItems) : null,
         ]
       );
       return fromRow(rows[0]);
@@ -157,6 +162,7 @@ async function save(test) {
        dangerous_faults = $11,
        physical_intervention = $12,
        verbal_intervention = $13,
+       fault_items = $14,
        updated_at = now()
      where id = $1 and instructor_id = $2
      returning *`,
@@ -174,6 +180,7 @@ async function save(test) {
       test.faults.dangerous,
       test.physicalIntervention,
       test.verbalIntervention,
+      test.faultItems ? JSON.stringify(test.faultItems) : null,
     ]
   );
   return fromRow(rows[0]);

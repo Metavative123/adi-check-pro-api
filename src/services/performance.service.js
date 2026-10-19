@@ -6,6 +6,7 @@
 const Test = require("../models/test.model");
 const config = require("../config/performance");
 const scoring = require("./scoring");
+const { faultBreakdown } = require("./faultItems");
 
 const { windowMonths, minTests, thresholds } = config;
 
@@ -22,7 +23,7 @@ async function getPerformance(instructorId) {
       windowMonths,
       windowStart,
       passRateTarget: config.scoring.passRateTarget,
-    standardsCheckAt: config.bands.redTriggers,
+      standardsCheckAt: config.bands.redTriggers,
       total: 0,
       passed: 0,
       minTests,
@@ -32,6 +33,7 @@ async function getPerformance(instructorId) {
       triggers: [],
       score: 0,
       band: "green",
+      faultBreakdown: faultBreakdown(tests),
     };
   }
 
@@ -54,6 +56,8 @@ async function getPerformance(instructorId) {
     triggers,
     score: scoring.scoreBreakdown(metrics).total,
     band: scoring.bandFor(triggers.length),
+    // Which DL25 items and headings come up, from detailed entries only.
+    faultBreakdown: faultBreakdown(tests),
   };
 }
 

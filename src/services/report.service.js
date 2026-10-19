@@ -8,6 +8,7 @@ const User = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
 const config = require("../config/performance");
 const scoring = require("./scoring");
+const { faultBreakdown } = require("./faultItems");
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -103,6 +104,9 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
 
     rules: scoring.ruleSummary(),
 
+    // Which DL25 items and headings come up, from detailed entries only.
+    faultBreakdown: faultBreakdown(tests),
+
     // True when the chosen period is not the standard rating window, so the
     // report can say so rather than implying these are the official figures.
     // Only when the period is not the standard window: then the figures can
@@ -124,6 +128,7 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
       dangerous: t.faults?.dangerous || 0,
       physicalIntervention: Boolean(t.physicalIntervention),
       verbalIntervention: Boolean(t.verbalIntervention),
+      faultEntry: t.faultEntry,
     })),
   };
 }

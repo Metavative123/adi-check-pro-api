@@ -52,6 +52,11 @@ create table if not exists tests (
   updated_at            timestamptz not null default now()
 );
 
+-- Faults logged item by item against the DL25 form, or null when only the
+-- three totals were entered. See src/services/faultItems.js. The totals above
+-- are always filled in, and for a detailed test are worked out from this.
+alter table tests add column if not exists fault_items jsonb;
+
 create index if not exists tests_instructor_date_idx
   on tests (instructor_id, test_date desc, created_at desc);
 create index if not exists tests_instructor_pupil_idx

@@ -3,6 +3,7 @@ const User = require("../models/user.model");
 const ApiError = require("../utils/ApiError");
 const scoring = require("./scoring");
 const { resultProblem } = require("./testRules");
+const { normalizeFaultItems, totalsFromItems } = require("./faultItems");
 
 // Counts come from the wizard as strings sometimes - make them safe numbers.
 function toCount(value) {
@@ -11,8 +12,27 @@ function toCount(value) {
   return Math.floor(n);
 }
 
+// The faults as entered, one way or the other, never both:
+//   faultItems  each DL25 item marked. The totals are worked out from these,
+//               and any totals sent alongside are ignored.
+//   faults      the three totals on their own (faultItems null or missing).
+function faultsFrom({ faultItems, faults = {} }) {
+  if (faultItems != null) {
+    const items = normalizeFaultItems(faultItems);
+    return { faultItems: items, faults: totalsFromItems(items) };
+  }
+  return {
+    faultItems: null,
+    faults: {
+      driving: toCount(faults.driving),
+      serious: toCount(faults.serious),
+      dangerous: toCount(faults.dangerous),
+    },
+  };
+}
+
 async function createTest(instructorId, body) {
-  const { pupilName, testDate, centerId, result, faults = {} } = body;
+  const { pupilName, testDate, centerId, result } = body;
 
   if (!pupilName || !pupilName.trim()) throw new ApiError(400, "Pupil name is required");
   if (!testDate) throw new ApiError(400, "Test date is required");
@@ -24,12 +44,8 @@ async function createTest(instructorId, body) {
   const center = user?.findTestCenter(centerId);
   if (!center) throw new ApiError(400, "That test centre is not on your list");
 
-  const counted = {
-    driving: toCount(faults.driving),
-    serious: toCount(faults.serious),
-    dangerous: toCount(faults.dangerous),
-  };
-  const problem = resultProblem({ result, faults: counted });
+  const { faults, faultItems } = faultsFrom(body);
+  const problem = resultProblem({ result, faults });
   if (problem) throw new ApiError(400, problem);
 
   const test = await Test.create({
@@ -38,7 +54,8 @@ async function createTest(instructorId, body) {
     testDate: toTestDate(testDate),
     testCenter: { centerId: center._id, name: center.name, code: center.code },
     result,
-    faults: counted,
+    faults,
+    faultItems,
     physicalIntervention: Boolean(body.physicalIntervention),
     verbalIntervention: Boolean(body.verbalIntervention),
   });
@@ -125,10 +142,12 @@ async function listTests(instructorId, { page = 1, limit = 10, ...filters } = {}
   };
 }
 
-// Only these change the performance rating. Editing a pupil name, date or
-// centre is record-keeping, so the score is left alone.
+// Only these change the performance rating or the fault breakdown beside it.
+// Editing a pupil name, date or centre is record-keeping, so the dashboard
+// figures are left alone.
 function ratingFields(test) {
   return JSON.stringify([
+    test.faultItems,
     test.result,
     test.faults.driving,
     test.faults.serious,
@@ -168,12 +187,10 @@ async function updateTest(instructorId, testId, body) {
     test.result = body.result;
   }
 
-  if (body.faults !== undefined) {
-    test.faults = {
-      driving: toCount(body.faults.driving),
-      serious: toCount(body.faults.serious),
-      dangerous: toCount(body.faults.dangerous),
-    };
+  // Either way of entering faults replaces the other: sending totals turns a
+  // detailed test into a totals-only one, and sending items does the reverse.
+  if (body.faults !== undefined || body.faultItems !== undefined) {
+    Object.assign(test, faultsFrom({ faults: test.faults, ...body }));
   }
 
   if (body.physicalIntervention !== undefined) {
