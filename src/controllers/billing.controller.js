@@ -25,12 +25,6 @@ async function getFoundingCount(req, res) {
   });
 }
 
-// Taking the free trial - no card, no Stripe.
-async function chooseTrial(req, res) {
-  const user = await billingService.chooseTrial(req.user.id);
-  res.json({ success: true, data: { user } });
-}
-
 async function createCheckoutSession(req, res) {
   const session = await billingService.createCheckoutSession(req.user.id, {
     planId: req.body.planId,
@@ -90,7 +84,6 @@ module.exports = {
   getBilling,
   getPlans,
   getFoundingCount,
-  chooseTrial,
   confirmCheckout,
   cancelSubscription,
   listPayments,

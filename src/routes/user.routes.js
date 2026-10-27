@@ -3,7 +3,7 @@ const userController = require("../controllers/user.controller");
 const { protect } = require("../middlewares/auth.middleware");
 const {
   requireAccess,
-  requireWriteAccess,
+  requireProfileAccess,
 } = require("../middlewares/subscription.middleware");
 
 const router = express.Router();
@@ -13,9 +13,9 @@ router.use(protect);
 router.use(requireAccess);
 
 router.get("/me", userController.getProfile);
-router.patch("/me", requireWriteAccess, userController.updateProfile);
-router.post("/me/test-centers", requireWriteAccess, userController.addTestCenter);
-router.patch("/me/test-centers/:centerId", requireWriteAccess, userController.updateTestCenter);
-router.delete("/me/test-centers/:centerId", requireWriteAccess, userController.removeTestCenter);
+router.patch("/me", requireProfileAccess, userController.updateProfile);
+router.post("/me/test-centers", requireProfileAccess, userController.addTestCenter);
+router.patch("/me/test-centers/:centerId", requireProfileAccess, userController.updateTestCenter);
+router.delete("/me/test-centers/:centerId", requireProfileAccess, userController.removeTestCenter);
 
 module.exports = router;

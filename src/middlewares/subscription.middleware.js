@@ -26,4 +26,11 @@ function requireWriteAccess(req, res, next) {
   return next(new ApiError(status, access.message));
 }
 
-module.exports = { requireAccess, requireWriteAccess };
+// The profile: as above, except that a new account may fill it in before it
+// has a plan. Onboarding comes first, and the trial only starts at Checkout.
+function requireProfileAccess(req, res, next) {
+  if (req.user?.access?.reason === "no_plan") return next();
+  return requireWriteAccess(req, res, next);
+}
+
+module.exports = { requireAccess, requireWriteAccess, requireProfileAccess };

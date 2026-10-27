@@ -12,6 +12,7 @@ const {
   normalizeFaultItems,
   totalsFromItems,
   faultBreakdown,
+  recurringFaults,
 } = require("../src/services/faultItems");
 
 test("the list has every item on the DL25 form, each with a unique key", () => {
@@ -88,4 +89,31 @@ test("the breakdown covers detailed entries only and says how many were left out
   assert.deepEqual(breakdown.seriousDangerous[1].items, [
     { key: "junctions.observation", label: "Observation", serious: 1, dangerous: 0 },
   ]);
+});
+
+test("recurring faults: an item on enough of the latest detailed tests is flagged", () => {
+  const obs = { "junctions.observation": { driving: 1, serious: 0, dangerous: 0 } };
+  const both = { ...obs, "mirrors.changeDirection": { driving: 2, serious: 1, dangerous: 0 } };
+  const tests = [
+    // newest first
+    { faultItems: both },
+    { faultItems: null, faults: { driving: 5, serious: 0, dangerous: 0 } }, // totals only: skipped
+    { faultItems: obs },
+    { faultItems: {} },
+    { faultItems: both },
+    // outside the last 4 detailed tests
+    { faultItems: both },
+  ];
+
+  const result = recurringFaults(tests, { lookbackTests: 4, minAppearances: 2 });
+  assert.equal(result.testsChecked, 4);
+  assert.deepEqual(
+    result.alerts.map((a) => [a.key, a.tests, a.driving, a.serious]),
+    [
+      ["junctions.observation", 3, 3, 0],
+      ["mirrors.changeDirection", 2, 4, 2],
+    ]
+  );
+
+  assert.equal(recurringFaults(tests, { lookbackTests: 4, minAppearances: 4 }).alerts.length, 0);
 });

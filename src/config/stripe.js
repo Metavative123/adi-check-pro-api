@@ -25,8 +25,9 @@ module.exports = {
   // only the fallback for when webhooks are not arriving.
   periodGraceDays: Number(process.env.BILLING_PERIOD_GRACE_DAYS || 3),
 
-  // Days of free access a new account gets, no card required.
-  trialDays: Number(process.env.BILLING_TRIAL_DAYS || 14),
+  // Days free on the first subscription. The card is taken at Checkout and
+  // the plan charges when they end.
+  trialDays: Number(process.env.BILLING_TRIAL_DAYS || 30),
 
   // Where Stripe sends the customer back to.
   // Stripe substitutes {CHECKOUT_SESSION_ID}. This page sits outside the

@@ -126,16 +126,20 @@ shown a colour, but the score and band are still returned for admin use.
 
 ## Billing
 
-Every instructor chooses before reaching the dashboard: a free trial, or one of
-the plans. Accounts created before plans existed are asked on their next visit,
-because `subscription.planSelected` defaults to `false`.
+Every instructor picks a plan before reaching the dashboard. Accounts created
+before plans existed are asked on their next visit, because
+`subscription.planSelected` defaults to `false`.
 
-The trial gives `BILLING_TRIAL_DAYS` (default 14) of full access with **no card**,
-and re-visiting the page cannot restart the clock. When it runs out, `POST /api/tests` returns **402** and the
-rest of the app stays readable - an expired account can still see its history.
+The plan starts with a free trial of `BILLING_TRIAL_DAYS` (default 30). The
+card is taken up front at Stripe Checkout, and the plan charges on its own when
+the trial ends unless it is cancelled first. There is one trial per account
+(`subscription.cardTrialUsed`); an account still inside an old no-card trial
+keeps the days it has left. When access runs out, `POST /api/tests` returns
+**402** and the rest of the app stays readable - an expired account can still
+see its history.
 
-Paying replaces the trial with a Stripe subscription. Checkout and the billing
-portal are Stripe-hosted, so no card details ever reach this server.
+Checkout and the billing portal are Stripe-hosted, so no card details ever
+reach this server.
 
 ### Plans
 
@@ -144,11 +148,12 @@ plain numbers in that file, in version control. There is deliberately no
 `PLAN_*_AMOUNT` environment variable: having the price in two places meant an
 edit could be silently overridden by `.env`.
 
-| Plan       | Default | Per month | Saving |
-| ---------- | ------- | --------- | ------ |
-| Monthly    | GBP 19  | GBP 19.00 | -      |
-| 6 months   | GBP 99  | GBP 16.50 | 13%    |
-| 12 months  | GBP 159 | GBP 13.25 | 30%    |
+| Plan       | Default    | Per month  | Saving |
+| ---------- | ---------- | ---------- | ------ |
+| Founding   | GBP 5.99   | GBP 5.99   | first 50 payers only |
+| Monthly    | GBP 9.99   | GBP 9.99   | -      |
+| 6 months   | GBP 49.95  | GBP 8.33   | 17%    |
+| 12 months  | GBP 99.90  | GBP 8.33   | 17%    |
 
 Discounts are **calculated** against the monthly rate, never stored, so changing
 an amount updates the advertised saving automatically.

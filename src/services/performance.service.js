@@ -6,7 +6,7 @@
 const Test = require("../models/test.model");
 const config = require("../config/performance");
 const scoring = require("./scoring");
-const { faultBreakdown } = require("./faultItems");
+const { faultBreakdown, recurringFaults } = require("./faultItems");
 
 const { windowMonths, minTests, thresholds } = config;
 
@@ -34,6 +34,7 @@ async function getPerformance(instructorId) {
       score: 0,
       band: "green",
       faultBreakdown: faultBreakdown(tests),
+      recurringFaults: recurringFaults(tests, config.recurring),
     };
   }
 
@@ -58,6 +59,8 @@ async function getPerformance(instructorId) {
     band: scoring.bandFor(triggers.length),
     // Which DL25 items and headings come up, from detailed entries only.
     faultBreakdown: faultBreakdown(tests),
+    // DL25 items that keep coming up on the latest tests.
+    recurringFaults: recurringFaults(tests, config.recurring),
   };
 }
 

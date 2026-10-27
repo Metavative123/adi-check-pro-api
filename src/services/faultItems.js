@@ -132,4 +132,37 @@ function faultBreakdown(tests) {
   };
 }
 
-module.exports = { MAX_DRIVING_PER_ITEM, normalizeFaultItems, totalsFromItems, faultBreakdown };
+// The DL25 items that keep coming up: any fault on an item (driving, serious
+// or dangerous) counts as it appearing on that test. Looks at the most recent
+// detailed tests only, so an old habit that has been fixed drops away.
+// `tests` must be newest first.
+function recurringFaults(tests, { lookbackTests, minAppearances }) {
+  const recent = tests.filter((t) => t.faultItems).slice(0, lookbackTests);
+
+  const alerts = ITEMS.map((item) => {
+    const marked = recent.filter((t) => t.faultItems[item.key]);
+    const sum = (field) => marked.reduce((total, t) => total + (t.faultItems[item.key][field] || 0), 0);
+    return {
+      key: item.key,
+      label: item.label,
+      groupLabel: item.groupLabel,
+      tests: marked.length,
+      driving: sum("driving"),
+      serious: sum("serious"),
+      dangerous: sum("dangerous"),
+    };
+  })
+    .filter((row) => row.tests >= minAppearances)
+    // Seen on the most tests first; then the more serious.
+    .sort((a, b) => b.tests - a.tests || b.dangerous - a.dangerous || b.serious - a.serious || b.driving - a.driving);
+
+  return { lookbackTests, minAppearances, testsChecked: recent.length, alerts };
+}
+
+module.exports = {
+  MAX_DRIVING_PER_ITEM,
+  normalizeFaultItems,
+  totalsFromItems,
+  faultBreakdown,
+  recurringFaults,
+};

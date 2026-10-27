@@ -40,6 +40,16 @@ module.exports = {
     passRateTarget: num("PERF_PASS_RATE_TARGET", 70),
   },
 
+  // Recurring fault alerts: a DL25 item that comes up on at least
+  // `minAppearances` of the last `lookbackTests` detailed tests is flagged,
+  // e.g. "Junctions: Observation has appeared in 6 of your last 10 tests".
+  // Teaching guidance only - never part of the rating. Threshold to be
+  // confirmed with Benn.
+  recurring: {
+    lookbackTests: num("PERF_RECURRING_LOOKBACK_TESTS", 10),
+    minAppearances: num("PERF_RECURRING_MIN_APPEARANCES", 3),
+  },
+
   // How the colour is chosen, by how many metrics have triggered.
   bands: {
     redTriggers: num("PERF_RED_TRIGGERS", 3), // this many triggers or more

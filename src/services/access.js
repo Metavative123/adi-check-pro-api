@@ -18,6 +18,7 @@ const MESSAGES = {
   manual: "Access to this account has been withdrawn.",
   subscription_ended: "Your subscription has ended. Subscribe again to log tests.",
   trial_ended: "Your free trial has ended. Subscribe to log tests.",
+  no_plan: "Choose a plan to start your free trial.",
   payment_failed: "Your last payment failed. Update your card to log tests again.",
 };
 
@@ -90,7 +91,9 @@ function accessFor(user) {
       ? "payment_failed"
       : sub.status === "canceled"
         ? "subscription_ended"
-        : "trial_ended";
+        : sub.status === "none" && !sub.trialEndsAt
+          ? "no_plan"
+          : "trial_ended";
 
   return {
     level: LEVELS.READ_ONLY,

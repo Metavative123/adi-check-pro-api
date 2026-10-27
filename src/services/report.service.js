@@ -120,6 +120,8 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
     tests: tests.map((t) => ({
       reference: t.reference,
       date: formatDate(t.testDate),
+      // YYYY-MM-DD, for the CSV export: sorts and imports cleanly.
+      isoDate: new Date(t.testDate).toISOString().slice(0, 10),
       pupilName: hideNames ? null : t.pupilName,
       testCenter: t.testCenter?.name || "",
       result: t.result,
@@ -129,6 +131,8 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
       physicalIntervention: Boolean(t.physicalIntervention),
       verbalIntervention: Boolean(t.verbalIntervention),
       faultEntry: t.faultEntry,
+      // The DL25 items marked, for the CSV export. null when totals only.
+      faultItems: t.faultItems,
     })),
   };
 }

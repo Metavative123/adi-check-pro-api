@@ -10,12 +10,12 @@ async function register({ name, email, password }) {
   const exists = await User.findByEmail(email);
   if (exists) throw new ApiError(409, "That email is already registered");
 
-  // Free trial starts the moment the account is made - no card needed.
+  // No trial yet: it starts when a plan is picked and a card entered.
   const user = await User.create({
     name,
     email,
     password,
-    subscription: billingService.startTrial(),
+    subscription: billingService.newSubscription(),
   });
   return { user, token: signToken(user._id) };
 }

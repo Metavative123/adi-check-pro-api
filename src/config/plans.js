@@ -127,7 +127,7 @@ function withPricing(plan) {
 module.exports = {
   currency,
   foundingLimit: FOUNDING_LIMIT,
-  trialDays: num("BILLING_TRIAL_DAYS", 14),
+  trialDays: num("BILLING_TRIAL_DAYS", 30),
   plans: PLANS.map(withPricing),
   getPlan: (id) => PLANS.map(withPricing).find((plan) => plan.id === id),
   // Raw definitions, for the setup script.

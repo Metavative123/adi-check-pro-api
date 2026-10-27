@@ -8,15 +8,18 @@ const { isUuid, compact } = require("../utils/rows");
 //   status       trialing / active / past_due / canceled / incomplete / none
 //   plan         "trial" or "pro"
 //   planId       which of the offered plans was picked, if any
-//   planSelected false until the instructor has chosen a trial or a paid plan
+//   planSelected false until the instructor has chosen a plan (the trial starts
+//                at Checkout, with a card)
 //   cancelAt     when a cancellation takes effect (current Stripe API versions
 //                express "cancel at period end" as a timestamp)
 //   accessRevoked / revokedReason / revokedAt
 //                set when money has gone back: a refund or a chargeback. This
 //                stops everything immediately, including viewing.
 //   trialCancelled
-//                the instructor will not continue after the trial; the trial
+//                an old no-card trial the instructor will not continue; it
 //                still runs to its end date.
+//   cardTrialUsed
+//                true once a Stripe trial has been given, so there is only one.
 //   foundingPlace
 //                1-50 once their first founding payment has gone through
 //                (see founding_places). Kept after cancelling.

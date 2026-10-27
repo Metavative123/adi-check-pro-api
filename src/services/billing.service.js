@@ -1,9 +1,10 @@
 // Subscriptions, on top of Stripe Checkout and the billing portal.
 //
-// The trial is local: a new account gets a number of free days with no card,
-// recorded on the user. Paying replaces it with a real Stripe subscription,
-// and every status change is mirrored back onto the user so the rest of the
-// app can answer "may this person use the app?" without calling Stripe.
+// The trial runs on Stripe: the instructor picks a plan and enters a card at
+// Checkout, gets a number of free days, and the plan starts charging on its
+// own when they end. Every status change is mirrored back onto the user so
+// the rest of the app can answer "may this person use the app?" without
+// calling Stripe.
 const Stripe = require("stripe");
 const User = require("../models/user.model");
 const Payment = require("../models/payment.model");
@@ -31,19 +32,46 @@ function toDate(seconds) {
   return seconds ? new Date(seconds * 1000) : undefined;
 }
 
-// Called once, when the account is created.
-function startTrial() {
-  const endsAt = new Date();
-  endsAt.setDate(endsAt.getDate() + config.trialDays);
-
+// Called once, when the account is created. Nothing is running yet: the trial
+// starts when the instructor picks a plan and enters a card at Checkout.
+function newSubscription() {
   return {
-    status: "trialing",
+    status: "none",
     plan: "trial",
-    trialEndsAt: endsAt,
     cancelAtPeriodEnd: false,
-    // The instructor is asked to choose a trial or a plan before the dashboard.
+    // The instructor is sent to choose a plan before the dashboard.
     planSelected: false,
   };
+}
+
+// Stripe Checkout wants a trial end at least two days away.
+const MIN_TRIAL_MS = 2 * 24 * 60 * 60 * 1000;
+
+// The free trial this instructor gets on their first subscription, as Stripe
+// Checkout's subscription_data fields. One trial per account:
+//   - anyone who has had a Stripe subscription before gets none
+//   - an account still inside an old no-card trial keeps the days it has left
+//   - everyone else gets the full trial
+function trialFor(user) {
+  const sub = user.subscription || {};
+  if (sub.stripeSubscriptionId || sub.cardTrialUsed) return {};
+
+  if (sub.planId === "trial" && sub.trialEndsAt) {
+    const endsAt = new Date(sub.trialEndsAt);
+    return endsAt.getTime() - Date.now() >= MIN_TRIAL_MS
+      ? { trial_end: Math.floor(endsAt.getTime() / 1000) }
+      : {};
+  }
+
+  return config.trialDays > 0 ? { trial_period_days: config.trialDays } : {};
+}
+
+// The same, as whole days, for the plan screen to promise.
+function trialDaysOffered(user) {
+  const trial = trialFor(user);
+  if (trial.trial_period_days) return trial.trial_period_days;
+  if (trial.trial_end) return Math.ceil((trial.trial_end * 1000 - Date.now()) / (24 * 60 * 60 * 1000));
+  return 0;
 }
 
 // Whether this user may still take the founding price: places are left and
@@ -63,7 +91,8 @@ async function foundingFor(user) {
 async function listPlans(user) {
   const founding = await foundingFor(user);
   const onFounding =
-    user?.subscription?.planId === "founding" && user.subscription.status === "active";
+    user?.subscription?.planId === "founding" &&
+    ["active", "trialing"].includes(user.subscription.status);
 
   return {
     currency: plansConfig.currency,
@@ -88,32 +117,6 @@ async function listPlans(user) {
       configured: plan.configured,
     })),
   };
-}
-
-// Taking the free trial is a choice like any other - it just costs nothing
-// and needs no card.
-async function chooseTrial(userId) {
-  const user = await User.findById(userId);
-  if (!user) throw new ApiError(404, "User not found");
-
-  if (user.subscription?.status === "active") {
-    throw new ApiError(409, "You are already subscribed");
-  }
-
-  // Only start the clock the first time, so re-visiting the page cannot be
-  // used to extend a trial.
-  if (!user.subscription?.trialEndsAt) {
-    const endsAt = new Date();
-    endsAt.setDate(endsAt.getDate() + config.trialDays);
-    user.subscription.trialEndsAt = endsAt;
-    user.subscription.status = "trialing";
-  }
-
-  user.subscription.planSelected = true;
-  user.subscription.planId = "trial";
-  await user.save();
-
-  return user;
 }
 
 // True when Stripe says the customer does not exist in this account - for
@@ -188,15 +191,26 @@ async function createCheckoutSession(userId, { planId, successUrl, cancelUrl }) 
     );
   }
 
+  const trial = trialFor(user);
+
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     line_items: [{ price: plan.priceId, quantity: 1 }],
+    // The card is taken now even when the first charge is a trial away, so
+    // the plan converts on its own when the trial ends.
+    payment_method_collection: "always",
     success_url: successUrl || config.successUrl,
     cancel_url: cancelUrl || config.cancelUrl,
     // Lets the webhook find the user even if the customer lookup ever fails.
     client_reference_id: user._id,
-    subscription_data: { metadata: { userId: user._id, planId: plan.id } },
+    subscription_data: {
+      ...trial,
+      ...(trial.trial_end || trial.trial_period_days
+        ? { trial_settings: { end_behavior: { missing_payment_method: "cancel" } } }
+        : {}),
+      metadata: { userId: user._id, planId: plan.id },
+    },
   });
 
   return { url: session.url, id: session.id, plan: plan.id };
@@ -240,6 +254,14 @@ async function applySubscription(user, subscription) {
     subscription.cancel_at_period_end || subscription.cancel_at
   );
 
+  // A Stripe trial: access runs to its end, then the plan charges. Recorded
+  // once used, so cancelling and coming back cannot start a second one.
+  if (subscription.trial_end) {
+    user.subscription.trialEndsAt = toDate(subscription.trial_end);
+    user.subscription.cardTrialUsed = true;
+    user.subscription.trialCancelled = false;
+  }
+
   // Paying counts as choosing, so the plan screen is not shown again.
   if (subscription.status === "active" || subscription.status === "trialing") {
     user.subscription.planSelected = true;
@@ -254,6 +276,10 @@ async function applySubscription(user, subscription) {
 // so a webhook delivered twice updates one row rather than creating two.
 async function recordInvoice(invoice, user) {
   if (!invoice?.id) return null;
+
+  // The £0 invoice that opens a free trial is not a payment: it would show as
+  // one in the history, and would claim a founding place nobody has paid for.
+  if (!invoice.amount_due && !invoice.amount_paid) return null;
 
   const owner = user || (await User.findByStripeCustomerId(invoice.customer));
   if (!owner) return null;
@@ -444,20 +470,28 @@ async function handleDispute(dispute) {
 }
 
 // Cancelling. A paid plan keeps running to the end of the period already paid
-// for - Stripe handles that, and access follows. A trial has nothing to run
-// down, so it simply keeps its remaining days and will not convert.
+// for - Stripe handles that, and access follows. A trial keeps its remaining
+// days and ends without charging: on Stripe the period end IS the trial end.
 async function cancelSubscription(userId) {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, "User not found");
 
   const sub = user.subscription || {};
 
-  if (sub.status === "active" && sub.stripeSubscriptionId) {
+  if (["active", "trialing"].includes(sub.status) && sub.stripeSubscriptionId) {
     requireStripe();
     const updated = await stripe.subscriptions.update(sub.stripeSubscriptionId, {
       cancel_at_period_end: true,
     });
     await applySubscription(user, updated);
+
+    if (updated.status === "trialing") {
+      return {
+        cancelled: true,
+        keepsAccessUntil: user.subscription.trialEndsAt,
+        message: "Your trial will not convert and your card will not be charged. You keep it until it ends.",
+      };
+    }
 
     return {
       cancelled: true,
@@ -467,6 +501,7 @@ async function cancelSubscription(userId) {
     };
   }
 
+  // An old no-card trial: nothing on Stripe to stop.
   if (sub.status === "trialing") {
     user.subscription.trialCancelled = true;
     await user.save();
@@ -554,6 +589,12 @@ async function getBilling(userId, { sync = false } = {}) {
     plan: sub.plan,
     trialEndsAt: sub.trialEndsAt,
     trialDaysLeft: user.trialDaysLeft,
+    // Free days the next Checkout gives, 0 once the trial has been used.
+    trialOffer: trialDaysOffered(user),
+    // A card is on file and the plan starts charging when the trial ends.
+    trialConverts: Boolean(
+      sub.status === "trialing" && sub.stripeSubscriptionId && !sub.cancelAtPeriodEnd
+    ),
     currentPeriodEnd: sub.currentPeriodEnd,
     cancelAtPeriodEnd: Boolean(sub.cancelAtPeriodEnd),
     // The day access actually ends, whether that is the period end or a
@@ -610,7 +651,7 @@ async function handleEvent(event) {
     return {
       handled: Boolean(payment),
       type: event.type,
-      ...(payment ? { paymentId: payment._id } : { reason: "no matching user" }),
+      ...(payment ? { paymentId: payment._id } : { reason: "nothing to record" }),
     };
   }
 
@@ -646,10 +687,10 @@ async function handleEvent(event) {
 }
 
 module.exports = {
-  startTrial,
+  newSubscription,
+  trialFor,
   listPlans,
   foundingFor,
-  chooseTrial,
   confirmCheckout,
   cancelSubscription,
   revokeAccess,
