@@ -16,6 +16,8 @@ async function register({ name, email, password }) {
     email,
     password,
     subscription: billingService.newSubscription(),
+    // The controller has checked the box was ticked.
+    termsAcceptedAt: new Date(),
   });
   return { user, token: signToken(user._id) };
 }

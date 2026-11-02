@@ -27,7 +27,7 @@ module.exports = {
 
   // Days free on the first subscription. The card is taken at Checkout and
   // the plan charges when they end.
-  trialDays: Number(process.env.BILLING_TRIAL_DAYS || 30),
+  trialDays: Number(process.env.BILLING_TRIAL_DAYS || 14),
 
   // Where Stripe sends the customer back to.
   // Stripe substitutes {CHECKOUT_SESSION_ID}. This page sits outside the

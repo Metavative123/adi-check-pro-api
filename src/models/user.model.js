@@ -21,8 +21,8 @@ const { isUuid, compact } = require("../utils/rows");
 //   cardTrialUsed
 //                true once a Stripe trial has been given, so there is only one.
 //   foundingPlace
-//                1-50 once their first founding payment has gone through
-//                (see founding_places). Kept after cancelling.
+//                1-50 from the start of a founding trial (see founding_places).
+//                Given back if the trial ends unpaid; kept for good once paid.
 const SUBSCRIPTION_DEFAULTS = {
   status: "trialing",
   plan: "trial",
@@ -76,6 +76,7 @@ class User {
     this.subscription = hydrateSubscription(row.subscription);
     this.resetTokenHash = row.reset_token_hash || undefined;
     this.resetTokenExpires = row.reset_token_expires || undefined;
+    this.termsAcceptedAt = row.terms_accepted_at || undefined;
     this.createdAt = row.created_at;
     this.updatedAt = row.updated_at;
 
@@ -130,20 +131,21 @@ class User {
 
   // --- Writes ---
 
-  static async create({ name, email, password, subscription }) {
+  static async create({ name, email, password, subscription, termsAcceptedAt }) {
     const cleanName = String(name || "").trim();
     if (!cleanName) throw new ApiError(400, "Name is required");
     checkPassword(password);
 
     const { rows } = await query(
-      `insert into users (name, email, password, subscription)
-       values ($1, $2, $3, $4)
+      `insert into users (name, email, password, subscription, terms_accepted_at)
+       values ($1, $2, $3, $4, $5)
        returning *`,
       [
         cleanName,
         String(email).trim().toLowerCase(),
         await bcrypt.hash(password, 10),
         JSON.stringify(hydrateSubscription(subscription)),
+        termsAcceptedAt || null,
       ]
     );
     return User.fromRow(rows[0]);
@@ -249,6 +251,7 @@ class User {
         role: this.role,
         adiBadgeNumber: this.adiBadgeNumber,
         subscription: this.subscription,
+        termsAcceptedAt: this.termsAcceptedAt,
         createdAt: this.createdAt,
         updatedAt: this.updatedAt,
       }),

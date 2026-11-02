@@ -24,6 +24,10 @@ create table if not exists users (
   updated_at          timestamptz not null default now()
 );
 
+-- When the instructor ticked "I accept the Terms & Conditions" at sign-up.
+-- Null for accounts made before the box existed.
+alter table users add column if not exists terms_accepted_at timestamptz;
+
 -- Webhooks find the user by their Stripe customer id.
 create index if not exists users_stripe_customer_idx
   on users ((subscription ->> 'stripeCustomerId'));

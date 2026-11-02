@@ -41,4 +41,23 @@ async function claim(userId) {
   return placeFor(userId);
 }
 
-module.exports = { counts, placeFor, claim };
+// Gives a place back, but only one that was never paid for: a founding trial
+// that was cancelled or ran out. A place someone has paid in stays used up
+// for good. Returns true when a place was freed.
+async function release(userId) {
+  const { rowCount } = await query(
+    `delete from founding_places f
+      where f.user_id = $1
+        and not exists (
+          select 1 from payments p
+           where p.instructor_id = $1
+             and p.plan_id = 'founding'
+             and p.status in ('paid', 'refunded')
+             and p.amount > 0
+        )`,
+    [userId]
+  );
+  return rowCount > 0;
+}
+
+module.exports = { counts, placeFor, claim, release };

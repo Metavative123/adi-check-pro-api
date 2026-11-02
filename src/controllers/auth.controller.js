@@ -3,9 +3,12 @@ const authService = require("../services/auth.service");
 const ApiError = require("../utils/ApiError");
 
 async function register(req, res) {
-  const { name, email, password } = req.body;
+  const { name, email, password, acceptTerms } = req.body;
   if (!name || !email || !password) {
     throw new ApiError(400, "Name, email and password are required");
+  }
+  if (acceptTerms !== true) {
+    throw new ApiError(400, "Please accept the Terms & Conditions to create an account");
   }
 
   const { user, token } = await authService.register({ name, email, password });

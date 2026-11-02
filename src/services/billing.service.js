@@ -269,6 +269,18 @@ async function applySubscription(user, subscription) {
   }
 
   await user.save();
+
+  // A founding place is held from the start of the trial, so no more than the
+  // limit can ever be on the founding price, and given back if the trial ends
+  // without a payment.
+  if (subscription.metadata?.planId === "founding") {
+    if (subscription.status === "active" || subscription.status === "trialing") {
+      await claimFounding(user);
+    } else if (user.subscription.status === "canceled" || user.subscription.status === "none") {
+      await releaseFounding(user);
+    }
+  }
+
   return user;
 }
 
@@ -348,15 +360,15 @@ function isFoundingInvoice(invoice, line, owner) {
   return planId === "founding";
 }
 
-// The member's first founding payment has gone through: give them a place.
-// Safe to call again for the same member - they keep the place they have.
+// A founding trial has started, or a founding payment gone through: give the
+// member a place. Safe to call again - they keep the place they have.
 async function claimFounding(user) {
   const place = await Founding.claim(user._id);
 
   if (!place) {
-    // Only possible if two payments raced for the last place. They have paid,
-    // so the price is honoured; this is logged so it can be looked at.
-    console.error(`Founding places full, but ${user._id} paid the founding price`);
+    // Only possible if two checkouts raced for the last place. They were
+    // offered the price, so it is honoured; this is logged so it can be looked at.
+    console.error(`Founding places full, but ${user._id} is on the founding price`);
     return null;
   }
 
@@ -365,6 +377,16 @@ async function claimFounding(user) {
     await user.save();
   }
   return place;
+}
+
+// A founding trial ended without a payment: the place goes back for someone
+// else. Kept if they ever paid the founding price.
+async function releaseFounding(user) {
+  if (!(await Founding.release(user._id))) return;
+  if (user.subscription.foundingPlace) {
+    user.subscription.foundingPlace = undefined;
+    await user.save();
+  }
 }
 
 // Called when Stripe sends the customer back after Checkout. Applies the

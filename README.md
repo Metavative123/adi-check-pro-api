@@ -53,7 +53,6 @@ The flow is always: **route -> controller -> service -> model**.
 | DELETE | /api/tests/:testId         | JWT  | Delete a test             |
 | GET    | /api/billing               | JWT  | Plan, trial days, access  |
 | GET    | /api/billing/plans         | JWT  | The plans and their discounts |
-| POST   | /api/billing/trial         | JWT  | Take the free trial (no card) |
 | POST   | /api/billing/checkout      | JWT  | Start Stripe Checkout (takes planId) |
 | POST   | /api/billing/portal        | JWT  | Stripe billing portal     |
 | POST   | /api/billing/checkout/confirm | JWT | Apply a finished checkout |
@@ -130,7 +129,7 @@ Every instructor picks a plan before reaching the dashboard. Accounts created
 before plans existed are asked on their next visit, because
 `subscription.planSelected` defaults to `false`.
 
-The plan starts with a free trial of `BILLING_TRIAL_DAYS` (default 30). The
+The plan starts with a free trial of `BILLING_TRIAL_DAYS` (default 14). The
 card is taken up front at Stripe Checkout, and the plan charges on its own when
 the trial ends unless it is cancelled first. There is one trial per account
 (`subscription.cardTrialUsed`); an account still inside an old no-card trial
@@ -150,7 +149,7 @@ edit could be silently overridden by `.env`.
 
 | Plan       | Default    | Per month  | Saving |
 | ---------- | ---------- | ---------- | ------ |
-| Founding   | GBP 5.99   | GBP 5.99   | first 50 payers only |
+| Founding   | GBP 5.99   | GBP 5.99   | first 50 members only |
 | Monthly    | GBP 9.99   | GBP 9.99   | -      |
 | 6 months   | GBP 49.95  | GBP 8.33   | 17%    |
 | 12 months  | GBP 99.90  | GBP 8.33   | 17%    |

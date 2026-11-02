@@ -40,9 +40,10 @@ const currency = (process.env.BILLING_CURRENCY || "gbp").toLowerCase();
 // mode and live mode have different ones.
 const PLANS = [
   {
-    // The first FOUNDING_LIMIT members to pay. They keep this price for as
-    // long as they stay subscribed; a place is used up for good once taken,
-    // even if that member later cancels.
+    // The first FOUNDING_LIMIT members. A place is held from the start of the
+    // trial and given back if the trial ends unpaid. They keep this price for
+    // as long as they stay subscribed; once paid in, the place is used up for
+    // good, even if that member later cancels.
     id: "founding",
     name: "Founding member",
     founding: true,
@@ -127,7 +128,7 @@ function withPricing(plan) {
 module.exports = {
   currency,
   foundingLimit: FOUNDING_LIMIT,
-  trialDays: num("BILLING_TRIAL_DAYS", 30),
+  trialDays: num("BILLING_TRIAL_DAYS", 14),
   plans: PLANS.map(withPricing),
   getPlan: (id) => PLANS.map(withPricing).find((plan) => plan.id === id),
   // Raw definitions, for the setup script.
