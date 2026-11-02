@@ -25,10 +25,13 @@ async function claim(userId) {
     const existing = await placeFor(userId);
     if (existing) return existing;
 
+    // The lowest free number, so a place given back by an unpaid trial is
+    // handed out again.
     const { rows } = await query(
       `insert into founding_places (place, user_id)
-       select coalesce(max(place), 0) + 1, $1 from founding_places
-       having coalesce(max(place), 0) < $2
+       select min(n), $1 from generate_series(1, $2::int) n
+        where not exists (select 1 from founding_places f where f.place = n)
+       having min(n) is not null
        on conflict do nothing
        returning place`,
       [userId, foundingLimit]
