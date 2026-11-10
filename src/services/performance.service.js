@@ -35,6 +35,7 @@ async function getPerformance(instructorId) {
       band: "green",
       faultBreakdown: faultBreakdown(tests),
       recurringFaults: recurringFaults(tests, config.recurring),
+      passRates: scoring.passRatesFrom(tests),
     };
   }
 
@@ -61,6 +62,8 @@ async function getPerformance(instructorId) {
     faultBreakdown: faultBreakdown(tests),
     // DL25 items that keep coming up on the latest tests.
     recurringFaults: recurringFaults(tests, config.recurring),
+    // ADI-linked and overall recorded pass rates, kept apart.
+    passRates: scoring.passRatesFrom(tests),
   };
 }
 

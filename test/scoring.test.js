@@ -162,3 +162,32 @@ test("a report period of exactly 12 months is the standard window", () => {
   // 12 months ending 7 Oct 2026 starts 8 Oct 2025 - the dashboard's window.
   assert.equal(iso(scoring.ratingWindowStart(new Date("2026-10-07T12:00:00Z"), 12)), "2025-10-08");
 });
+
+test("ADI-linked and overall pass rates are counted separately", () => {
+  const t = (result, adiLinked) => ({ result, adiLinked });
+  const rates = scoring.passRatesFrom([
+    t("pass", true), // instructor's car
+    t("fail", true),
+    t("pass", true), // pupil's car, ADI number supplied
+    t("pass", false), // pupil's car, ADI number not supplied
+    t("fail", false),
+  ]);
+
+  assert.deepEqual(
+    { passed: rates.adiLinked.passed, tests: rates.adiLinked.tests, percent: rates.adiLinked.percent },
+    { passed: 2, tests: 3, percent: 66.7 }
+  );
+  assert.deepEqual(
+    { passed: rates.overall.passed, tests: rates.overall.tests, percent: rates.overall.percent },
+    { passed: 3, tests: 5, percent: 60 }
+  );
+  assert.equal(rates.adiLinked.label, "ADI-linked pass rate");
+  assert.equal(rates.overall.label, "Overall recorded pass rate");
+});
+
+test("pass rates with no tests have no percentage", () => {
+  const rates = scoring.passRatesFrom([{ result: "pass", adiLinked: false }]);
+  assert.equal(rates.adiLinked.tests, 0);
+  assert.equal(rates.adiLinked.percent, null);
+  assert.equal(rates.overall.percent, 100);
+});

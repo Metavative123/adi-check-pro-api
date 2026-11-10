@@ -29,12 +29,10 @@ async function forgotPassword(req, res) {
   const { email } = req.body;
   if (!email) throw new ApiError(400, "Email is required");
 
-  const { resetToken } = await authService.forgotPassword({ email });
+  await authService.forgotPassword({ email });
   res.json({
     success: true,
-    message: "If that email exists, a reset link has been sent",
-    // Only exposed until real emails are wired up.
-    ...(resetToken ? { resetToken } : {}),
+    message: "If that email has an account, a reset link has been sent",
   });
 }
 

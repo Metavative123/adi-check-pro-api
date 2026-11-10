@@ -123,6 +123,28 @@ The colour comes from the trigger count alone:
 Under `minTests` (default 5) tests in the window, `hasEnoughData` is `false`: the instructor is not
 shown a colour, but the score and band are still returned for admin use.
 
+## Password reset email
+
+`POST /api/auth/forgot-password` emails a one-time link (30 minutes) to
+`CLIENT_URL/reset-password?token=...`. The link is never returned in the
+response. Mail goes out through the business mailbox over SMTP: set
+`SMTP_HOST`, `SMTP_PORT` (465 SSL / 587 STARTTLS), `SMTP_USER`, `SMTP_PASS`
+and `EMAIL_FROM`. Without them, development prints the email to the console
+and production answers 503 rather than pretending it was sent.
+
+## Pass rates
+
+Every test records the car (`pupilOwnCar`) and whether the instructor's ADI
+number was supplied (`adiNumberSupplied`, always true in the instructor's car).
+
+| Pass rate | Counts |
+| --- | --- |
+| ADI-linked | tests where the ADI number was supplied |
+| Overall recorded | every test |
+
+Both come from `scoring.passRatesFrom`, shared by the dashboard
+(`passRates` on `/api/tests/performance`) and the PDF report.
+
 ## Billing
 
 Every instructor picks a plan before reaching the dashboard. Accounts created

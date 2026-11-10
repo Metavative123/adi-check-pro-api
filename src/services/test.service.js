@@ -31,6 +31,19 @@ function faultsFrom({ faultItems, faults = {} }) {
   };
 }
 
+// Which car, and whether the ADI number was supplied. In the instructor's own
+// car it always is; in the pupil's car the instructor must say which.
+function carFrom(pupilOwnCar, adiNumberSupplied) {
+  const ownCar = pupilOwnCar === true || pupilOwnCar === "true";
+  if (!ownCar) return { pupilOwnCar: false, adiNumberSupplied: true };
+
+  const supplied = toBool(adiNumberSupplied);
+  if (supplied === undefined) {
+    throw new ApiError(400, "For a test in the pupil's own car, say whether your ADI number was supplied");
+  }
+  return { pupilOwnCar: true, adiNumberSupplied: supplied };
+}
+
 async function createTest(instructorId, body) {
   const { pupilName, testDate, centerId, result } = body;
 
@@ -58,6 +71,7 @@ async function createTest(instructorId, body) {
     faultItems,
     physicalIntervention: Boolean(body.physicalIntervention),
     verbalIntervention: Boolean(body.verbalIntervention),
+    ...carFrom(body.pupilOwnCar, body.adiNumberSupplied),
   });
 
   return test;
@@ -154,6 +168,8 @@ function ratingFields(test) {
     test.faults.dangerous,
     test.physicalIntervention,
     test.verbalIntervention,
+    test.pupilOwnCar,
+    test.adiNumberSupplied,
   ]);
 }
 
@@ -199,6 +215,14 @@ async function updateTest(instructorId, testId, body) {
 
   if (body.verbalIntervention !== undefined) {
     test.verbalIntervention = Boolean(body.verbalIntervention);
+  }
+
+  if (body.pupilOwnCar !== undefined || body.adiNumberSupplied !== undefined) {
+    const car = carFrom(
+      body.pupilOwnCar !== undefined ? body.pupilOwnCar : test.pupilOwnCar,
+      body.adiNumberSupplied !== undefined ? body.adiNumberSupplied : test.adiNumberSupplied
+    );
+    Object.assign(test, car);
   }
 
   // Checked on the finished test, so an old record that broke the rule has to

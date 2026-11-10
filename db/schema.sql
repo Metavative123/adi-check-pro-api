@@ -61,6 +61,13 @@ create table if not exists tests (
 -- are always filled in, and for a detailed test are worked out from this.
 alter table tests add column if not exists fault_items jsonb;
 
+-- Which car the test was taken in, and whether the instructor's ADI number
+-- was given to the examiner. A test counts towards the ADI-linked pass rate
+-- only when it was: always in the instructor's car, and in the pupil's own car
+-- when the number was supplied. Every test counts towards the overall rate.
+alter table tests add column if not exists pupil_own_car boolean not null default false;
+alter table tests add column if not exists adi_number_supplied boolean not null default true;
+
 create index if not exists tests_instructor_date_idx
   on tests (instructor_id, test_date desc, created_at desc);
 create index if not exists tests_instructor_pupil_idx

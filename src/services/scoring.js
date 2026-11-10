@@ -129,6 +129,43 @@ function totalsFrom(tests) {
   }, emptyTotals());
 }
 
+// The two pass rates, always shown side by side and never mixed:
+//   adiLinked  tests where the instructor's ADI number was supplied - every
+//              test in their own car, and pupil's-car tests where it was given
+//   overall    every test the instructor logged, ADI number or not
+// percent is null when there are no tests to divide by.
+const PASS_RATE_INFO = {
+  adiLinked: {
+    label: "ADI-linked pass rate",
+    includes:
+      "Tests where your ADI number was supplied: every test in your car, and tests in the pupil's own car when your ADI number was given.",
+  },
+  overall: {
+    label: "Overall recorded pass rate",
+    includes:
+      "Every test you have logged, whether your ADI number was supplied or not.",
+  },
+};
+
+function passRateOf(tests) {
+  const passed = tests.filter((t) => t.result === "pass").length;
+  return {
+    passed,
+    tests: tests.length,
+    percent: tests.length ? round((passed / tests.length) * 100, 1) : null,
+  };
+}
+
+function passRatesFrom(tests) {
+  return {
+    adiLinked: {
+      ...PASS_RATE_INFO.adiLinked,
+      ...passRateOf(tests.filter((t) => t.adiLinked !== false)),
+    },
+    overall: { ...PASS_RATE_INFO.overall, ...passRateOf(tests) },
+  };
+}
+
 // Shown alongside the four rated metrics, as DVSA's ADI report does, but for
 // information only: no threshold, no trigger, no effect on the score. Serious
 // and dangerous faults are kept apart - the 0.55 trigger is serious faults only.
@@ -270,6 +307,7 @@ function ruleSummary() {
 }
 
 module.exports = {
+  passRatesFrom,
   METRICS,
   POINTS_PER_METRIC,
   round,

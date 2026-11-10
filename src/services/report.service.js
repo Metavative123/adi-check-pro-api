@@ -88,6 +88,9 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
     metrics,
     triggers,
 
+    // ADI-linked and overall recorded pass rates, kept apart.
+    passRates: scoring.passRatesFrom(tests),
+
     // How each metric was arrived at.
     workings: scoring.workingsFor(totals, metrics),
 
@@ -130,6 +133,9 @@ async function buildReport(instructorId, { from, to, hideNames = false } = {}) {
       dangerous: t.faults?.dangerous || 0,
       physicalIntervention: Boolean(t.physicalIntervention),
       verbalIntervention: Boolean(t.verbalIntervention),
+      pupilOwnCar: Boolean(t.pupilOwnCar),
+      adiNumberSupplied: t.adiNumberSupplied !== false,
+      adiLinked: t.adiLinked !== false,
       faultEntry: t.faultEntry,
       // The DL25 items marked, for the CSV export. null when totals only.
       faultItems: t.faultItems,
