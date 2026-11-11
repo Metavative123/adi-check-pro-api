@@ -26,11 +26,13 @@ function requireWriteAccess(req, res, next) {
   return next(new ApiError(status, access.message));
 }
 
-// The profile: as above, except that a new account may fill it in before it
-// has a plan. Onboarding comes first, and the trial only starts at Checkout.
+// The profile (badge number and test centres) is not what the plan pays for,
+// so anyone who can still read may fill it in: a new account before it has a
+// plan, and a lapsed one, which would otherwise be held on the onboarding
+// screen with no way through to the plan page. Only a refund or dispute
+// blocks it, the same as everything else.
 function requireProfileAccess(req, res, next) {
-  if (req.user?.access?.reason === "no_plan") return next();
-  return requireWriteAccess(req, res, next);
+  return requireAccess(req, res, next);
 }
 
 module.exports = { requireAccess, requireWriteAccess, requireProfileAccess };
