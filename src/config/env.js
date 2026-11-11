@@ -1,9 +1,15 @@
 // All environment variables are read here, nowhere else.
 require("dotenv").config();
 
+// Vercel does not set NODE_ENV for the function at run time (and a copied
+// "development" value would be wrong there), so running on Vercel is always
+// production: no stack traces in responses, and no pretending an email was
+// sent when it was only printed to a log.
+const nodeEnv = process.env.VERCEL ? "production" : process.env.NODE_ENV || "development";
+
 const env = {
   port: process.env.PORT || 5000,
-  nodeEnv: process.env.NODE_ENV || "development",
+  nodeEnv,
   // Supabase: Project Settings -> Database -> Connection string.
   // POSTGRES_URL is the name Vercel's Supabase integration gives it.
   databaseUrl: process.env.DATABASE_URL || process.env.POSTGRES_URL,
@@ -13,7 +19,7 @@ const env = {
   // in production - never taken from the request, which anyone can fake.
   clientUrl: (
     process.env.CLIENT_URL ||
-    (process.env.NODE_ENV === "production"
+    (nodeEnv === "production"
       ? "https://adi-check-pro-web.vercel.app"
       : "http://localhost:3000")
   ).replace(/\/+$/, ""),
